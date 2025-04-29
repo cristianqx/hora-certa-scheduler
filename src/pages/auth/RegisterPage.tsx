@@ -1,9 +1,9 @@
 
-import React from 'react';
+import React, { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Logo } from '@/components/Logo';
@@ -16,6 +16,7 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { toast } from 'sonner';
+import { supabase } from '@/integrations/supabase/client';
 
 const registerSchema = z.object({
   name: z.string().min(2, 'Nome deve ter pelo menos 2 caracteres'),
@@ -30,6 +31,9 @@ const registerSchema = z.object({
 type RegisterFormValues = z.infer<typeof registerSchema>;
 
 const RegisterPage: React.FC = () => {
+  const navigate = useNavigate();
+  const [isLoading, setIsLoading] = useState(false);
+  
   const form = useForm<RegisterFormValues>({
     resolver: zodResolver(registerSchema),
     defaultValues: {
@@ -40,14 +44,36 @@ const RegisterPage: React.FC = () => {
     },
   });
 
-  const onSubmit = (values: RegisterFormValues) => {
-    // TODO: Implement registration logic with Supabase
-    console.log('Form submitted:', values);
-    toast.success('Conta criada com sucesso!', {
-      description: 'Você já pode fazer login.',
-    });
-    // Reset the form
-    form.reset();
+  const onSubmit = async (values: RegisterFormValues) => {
+    try {
+      setIsLoading(true);
+      
+      const { data, error } = await supabase.auth.signUp({
+        email: values.email,
+        password: values.password,
+        options: {
+          data: {
+            name: values.name,
+          }
+        }
+      });
+      
+      if (error) {
+        throw error;
+      }
+      
+      toast.success('Conta criada com sucesso!', {
+        description: 'Você já pode fazer login.',
+      });
+      
+      navigate('/login');
+      
+    } catch (error: any) {
+      console.error('Erro no registro:', error);
+      toast.error(error.message || 'Erro ao criar conta. Tente novamente.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -128,8 +154,8 @@ const RegisterPage: React.FC = () => {
               />
 
               <div>
-                <Button type="submit" className="w-full">
-                  Cadastrar
+                <Button type="submit" className="w-full" disabled={isLoading}>
+                  {isLoading ? 'Cadastrando...' : 'Cadastrar'}
                 </Button>
               </div>
             </form>

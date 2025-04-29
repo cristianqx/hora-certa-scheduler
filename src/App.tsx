@@ -16,6 +16,7 @@ import NewServicePage from "./pages/dashboard/NewServicePage";
 import AvailabilityPage from "./pages/dashboard/AvailabilityPage";
 import ProfilePage from "./pages/dashboard/ProfilePage";
 import PlansPage from "./pages/dashboard/PlansPage";
+import { PrivateRoute } from "./components/auth/PrivateRoute";
 
 const queryClient = new QueryClient();
 
@@ -32,14 +33,16 @@ const App = () => (
           <Route path="/login" element={<LoginPage />} />
           <Route path="/booking/:username" element={<PublicBookingPage />} />
           
-          {/* Dashboard routes */}
-          <Route path="/dashboard" element={<DashboardLayout />}>
-            <Route index element={<DashboardPage />} />
-            <Route path="services" element={<ServicesPage />} />
-            <Route path="services/new" element={<NewServicePage />} />
-            <Route path="availability" element={<AvailabilityPage />} />
-            <Route path="profile" element={<ProfilePage />} />
-            <Route path="plans" element={<PlansPage />} />
+          {/* Protected Dashboard routes */}
+          <Route element={<PrivateRoute />}>
+            <Route path="/dashboard" element={<DashboardLayout />}>
+              <Route index element={<DashboardPage />} />
+              <Route path="services" element={<ServicesPage />} />
+              <Route path="services/new" element={<NewServicePage />} />
+              <Route path="availability" element={<AvailabilityPage />} />
+              <Route path="profile" element={<ProfilePage />} />
+              <Route path="plans" element={<PlansPage />} />
+            </Route>
           </Route>
           
           {/* Catch-all route for 404 */}

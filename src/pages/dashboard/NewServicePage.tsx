@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/form';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
+import { supabase } from '@/integrations/supabase/client';
 
 const serviceSchema = z.object({
   name: z.string().min(1, 'O nome do serviço é obrigatório'),
@@ -31,6 +32,23 @@ type ServiceFormValues = z.infer<typeof serviceSchema>;
 
 const NewServicePage: React.FC = () => {
   const navigate = useNavigate();
+  const [isLoading, setIsLoading] = useState(false);
+  const [userId, setUserId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const checkAuth = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session) {
+        navigate('/login');
+        return;
+      }
+      
+      setUserId(session.user.id);
+    };
+    
+    checkAuth();
+  }, [navigate]);
 
   const form = useForm<ServiceFormValues>({
     resolver: zodResolver(serviceSchema),
@@ -43,11 +61,36 @@ const NewServicePage: React.FC = () => {
     },
   });
 
-  const onSubmit = (values: ServiceFormValues) => {
-    // TODO: Implement service creation
-    console.log('Form submitted:', values);
-    toast.success('Serviço criado com sucesso!');
-    navigate('/dashboard/services');
+  const onSubmit = async (values: ServiceFormValues) => {
+    if (!userId) {
+      toast.error('Usuário não autenticado');
+      return;
+    }
+    
+    setIsLoading(true);
+    
+    try {
+      const { error } = await supabase
+        .from('services')
+        .insert({
+          user_id: userId,
+          name: values.name,
+          description: values.description || null,
+          duration: values.duration,
+          price: values.price || null,
+          active: values.active
+        });
+      
+      if (error) throw error;
+      
+      toast.success('Serviço criado com sucesso!');
+      navigate('/dashboard/services');
+    } catch (error: any) {
+      console.error('Error creating service:', error);
+      toast.error(error.message || 'Erro ao criar serviço');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -161,7 +204,9 @@ const NewServicePage: React.FC = () => {
               <Button type="button" variant="outline" onClick={() => navigate('/dashboard/services')}>
                 Cancelar
               </Button>
-              <Button type="submit">Salvar Serviço</Button>
+              <Button type="submit" disabled={isLoading}>
+                {isLoading ? 'Salvando...' : 'Salvar Serviço'}
+              </Button>
             </div>
           </form>
         </Form>

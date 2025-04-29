@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -17,6 +17,8 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { toast } from 'sonner';
+import { supabase } from '@/integrations/supabase/client';
+import { useNavigate } from 'react-router-dom';
 
 const profileSchema = z.object({
   name: z.string().min(2, 'Nome deve ter pelo menos 2 caracteres'),
@@ -29,21 +31,111 @@ const profileSchema = z.object({
 type ProfileFormValues = z.infer<typeof profileSchema>;
 
 const ProfilePage: React.FC = () => {
+  const navigate = useNavigate();
+  const [isLoading, setIsLoading] = useState(true);
+  const [user, setUser] = useState<any>(null);
+
   const form = useForm<ProfileFormValues>({
     resolver: zodResolver(profileSchema),
     defaultValues: {
-      name: 'João Pedro',
-      email: 'joao@exemplo.com',
-      profession: 'Terapeuta',
-      bio: 'Terapeuta especializado em terapia cognitivo-comportamental com mais de 5 anos de experiência.',
-      website: 'https://meusite.com',
+      name: '',
+      email: '',
+      profession: '',
+      bio: '',
+      website: '',
     },
   });
 
-  const onSubmit = (values: ProfileFormValues) => {
-    console.log('Form submitted:', values);
-    toast.success('Perfil atualizado com sucesso!');
+  useEffect(() => {
+    const checkUser = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session) {
+        navigate('/login');
+        return;
+      }
+
+      const { data: profile, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', session.user.id)
+        .single();
+
+      if (error) {
+        console.error('Error fetching profile:', error);
+        toast.error('Erro ao carregar perfil');
+        setIsLoading(false);
+        return;
+      }
+
+      if (profile) {
+        form.reset({
+          name: profile.name || '',
+          email: profile.email || '',
+          profession: profile.profession || '',
+          bio: profile.bio || '',
+          website: profile.website || '',
+        });
+
+        setUser(session.user);
+      }
+      
+      setIsLoading(false);
+    };
+
+    checkUser();
+  }, [navigate, form]);
+
+  const onSubmit = async (values: ProfileFormValues) => {
+    try {
+      setIsLoading(true);
+
+      if (!user) {
+        toast.error('Usuário não autenticado');
+        return;
+      }
+
+      const { error } = await supabase
+        .from('profiles')
+        .update({
+          name: values.name,
+          profession: values.profession,
+          bio: values.bio,
+          website: values.website,
+        })
+        .eq('id', user.id);
+
+      if (error) throw error;
+
+      toast.success('Perfil atualizado com sucesso!');
+    } catch (error: any) {
+      console.error('Error updating profile:', error);
+      toast.error(error.message || 'Erro ao atualizar perfil');
+    } finally {
+      setIsLoading(false);
+    }
   };
+
+  const handleLogout = async () => {
+    const { error } = await supabase.auth.signOut();
+    
+    if (error) {
+      toast.error('Erro ao sair');
+      return;
+    }
+    
+    toast.success('Sessão encerrada');
+    navigate('/login');
+  };
+
+  const handleDeleteAccount = async () => {
+    // Implementação futura - exigiria função no backend para segurança
+    toast.error('Esta funcionalidade requer configuração adicional de segurança.');
+  };
+
+  if (isLoading) {
+    return <div className="flex justify-center items-center h-96">Carregando...</div>;
+  }
 
   return (
     <div className="space-y-6">
@@ -150,7 +242,9 @@ const ProfilePage: React.FC = () => {
                   )}
                 />
 
-                <Button type="submit">Salvar Alterações</Button>
+                <Button type="submit" disabled={isLoading}>
+                  {isLoading ? 'Salvando...' : 'Salvar Alterações'}
+                </Button>
               </form>
             </Form>
           </CardContent>
@@ -165,7 +259,7 @@ const ProfilePage: React.FC = () => {
           </CardHeader>
           <CardContent className="flex flex-col items-center">
             <div className="w-32 h-32 rounded-full bg-primary-100 flex items-center justify-center text-primary-700 mb-6 text-4xl font-medium">
-              JP
+              {form.watch('name').substring(0, 2).toUpperCase()}
             </div>
             <div className="space-y-2 w-full">
               <Button variant="outline" className="w-full">
@@ -194,12 +288,19 @@ const ProfilePage: React.FC = () => {
             </p>
             <Button variant="outline">Alterar Senha</Button>
           </div>
+          <div className="border-b pb-4">
+            <h3 className="font-medium mb-1">Sair da conta</h3>
+            <p className="text-sm text-muted-foreground mb-3">
+              Encerre sua sessão atual.
+            </p>
+            <Button variant="outline" onClick={handleLogout}>Sair</Button>
+          </div>
           <div>
             <h3 className="font-medium text-destructive mb-1">Excluir Conta</h3>
             <p className="text-sm text-muted-foreground mb-3">
               Todos os seus dados serão permanentemente excluídos. Esta ação não pode ser desfeita.
             </p>
-            <Button variant="destructive">Excluir Conta</Button>
+            <Button variant="destructive" onClick={handleDeleteAccount}>Excluir Conta</Button>
           </div>
         </CardContent>
       </Card>
