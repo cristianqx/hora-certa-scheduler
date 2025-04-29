@@ -1,8 +1,8 @@
-
 import React from 'react';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Check, X } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 interface PlanFeature {
   name: string;
