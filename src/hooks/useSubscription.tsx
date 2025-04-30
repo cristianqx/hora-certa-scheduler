@@ -51,9 +51,9 @@ export const SubscriptionProvider = ({ children }: { children: ReactNode }) => {
         return;
       }
       
-      // Usamos `from` com uma query tipada para user_subscriptions
+      // Usando type assertion para evitar erros do TypeScript com tabelas personalizadas
       const { data: subscription, error } = await supabase
-        .from('user_subscriptions')
+        .from('user_subscriptions' as any)
         .select('*')
         .eq('user_id', session.user.id)
         .single();
@@ -68,8 +68,8 @@ export const SubscriptionProvider = ({ children }: { children: ReactNode }) => {
       }
       
       if (subscription) {
-        // Casting subscription para o tipo UserSubscription
-        const userSub = subscription as unknown as UserSubscription;
+        // Usando o tipo UserSubscription para tipar corretamente
+        const userSub = subscription as UserSubscription;
         setPlan(userSub.status === 'trialing' ? 'trialing' : userSub.plan as SubscriptionStatus);
         
         if (userSub.trial_ends_at) {

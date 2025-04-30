@@ -50,10 +50,10 @@ export function UpgradeModal({ open, onClose, featureName, origin }: UpgradeModa
         user_id: session?.user?.id || null,
       };
       
-      // Usando a query tipada para pro_waitlist
+      // Usando type assertion para evitar erros do TypeScript com tabelas personalizadas
       const { error } = await supabase
-        .from('pro_waitlist')
-        .insert(waitlistEntry as any);
+        .from('pro_waitlist' as any)
+        .insert(waitlistEntry);
       
       if (error) throw error;
       
