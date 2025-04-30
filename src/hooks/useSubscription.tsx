@@ -15,6 +15,19 @@ interface SubscriptionContextType {
   reloadSubscription: () => Promise<void>;
 }
 
+// Definição dos tipos para user_subscriptions
+interface UserSubscription {
+  id: string;
+  user_id: string;
+  plan: string;
+  status: string;
+  stripe_subscription_id: string | null;
+  trial_ends_at: string | null;
+  current_period_end: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 const SubscriptionContext = createContext<SubscriptionContextType | undefined>(undefined);
 
 export const SubscriptionProvider = ({ children }: { children: ReactNode }) => {
@@ -38,13 +51,14 @@ export const SubscriptionProvider = ({ children }: { children: ReactNode }) => {
         return;
       }
       
+      // Usamos `from` com uma query tipada para user_subscriptions
       const { data: subscription, error } = await supabase
         .from('user_subscriptions')
         .select('*')
         .eq('user_id', session.user.id)
         .single();
       
-      if (error && error.code !== 'PGRST116') { // PGRST116 is "no rows returned"
+      if (error && error.code !== 'PGRST116') { // PGRST116 é "no rows returned"
         console.error('Erro ao carregar assinatura:', error);
         toast({
           title: 'Erro ao carregar plano',
@@ -54,14 +68,16 @@ export const SubscriptionProvider = ({ children }: { children: ReactNode }) => {
       }
       
       if (subscription) {
-        setPlan(subscription.status === 'trialing' ? 'trialing' : subscription.plan as SubscriptionStatus);
+        // Casting subscription para o tipo UserSubscription
+        const userSub = subscription as unknown as UserSubscription;
+        setPlan(userSub.status === 'trialing' ? 'trialing' : userSub.plan as SubscriptionStatus);
         
-        if (subscription.trial_ends_at) {
-          setTrialEndsAt(new Date(subscription.trial_ends_at));
+        if (userSub.trial_ends_at) {
+          setTrialEndsAt(new Date(userSub.trial_ends_at));
         }
         
-        if (subscription.current_period_end) {
-          setCurrentPeriodEnd(new Date(subscription.current_period_end));
+        if (userSub.current_period_end) {
+          setCurrentPeriodEnd(new Date(userSub.current_period_end));
         }
       } else {
         setPlan('free');

@@ -22,6 +22,14 @@ interface UpgradeModalProps {
   origin: 'dashboard' | 'landing';
 }
 
+// Definição do tipo para waitlist
+interface WaitlistEntry {
+  name: string;
+  email: string;
+  origin: 'dashboard' | 'landing';
+  user_id: string | null;
+}
+
 export function UpgradeModal({ open, onClose, featureName, origin }: UpgradeModalProps) {
   const { toast } = useToast();
   const [name, setName] = useState('');
@@ -35,16 +43,17 @@ export function UpgradeModal({ open, onClose, featureName, origin }: UpgradeModa
     try {
       const { data: { session } } = await supabase.auth.getSession();
       
-      const waitlistEntry = {
+      const waitlistEntry: WaitlistEntry = {
         name: name || 'Usuário',
         email: email || (session?.user?.email || ''),
         origin,
         user_id: session?.user?.id || null,
       };
       
+      // Usando a query tipada para pro_waitlist
       const { error } = await supabase
         .from('pro_waitlist')
-        .insert(waitlistEntry);
+        .insert(waitlistEntry as any);
       
       if (error) throw error;
       

@@ -224,9 +224,8 @@ const PlansPage: React.FC = () => {
                 )}
                 disabled={plan.current && !isSubscribed}
                 onClick={() => handlePlanAction(plan.name.includes('Gratuito') ? 'free' : 'pro')}
-                loading={isLoading}
               >
-                {plan.buttonText}
+                {isLoading ? 'Processando...' : plan.buttonText}
               </Button>
             </CardFooter>
           </Card>
