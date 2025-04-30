@@ -68,8 +68,8 @@ export const SubscriptionProvider = ({ children }: { children: ReactNode }) => {
       }
       
       if (subscription) {
-        // Usando o tipo UserSubscription para tipar corretamente
-        const userSub = subscription as UserSubscription;
+        // Convertendo para unknown primeiro para evitar erros de tipo
+        const userSub = subscription as unknown as UserSubscription;
         setPlan(userSub.status === 'trialing' ? 'trialing' : userSub.plan as SubscriptionStatus);
         
         if (userSub.trial_ends_at) {
