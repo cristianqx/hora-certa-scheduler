@@ -27,16 +27,10 @@ export const CTASection: React.FC = () => {
               <Button
                 variant="outline"
                 size="lg"
-                className="border-white text-white hover:bg-primary-700"
+                className="border-white text-white hover:bg-primary-700 hover:text-white"
                 asChild
               >
-                <Link to="#contact" onClick={(e) => {
-                  e.preventDefault();
-                  const contactElement = document.getElementById('contact');
-                  if (contactElement) {
-                    contactElement.scrollIntoView({ behavior: 'smooth' });
-                  }
-                }}>Fale Conosco</Link>
+                <Link to="#contact" id="contact-button">Fale Conosco</Link>
               </Button>
             </div>
           </div>
