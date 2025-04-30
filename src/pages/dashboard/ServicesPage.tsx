@@ -7,6 +7,8 @@ import { Link } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
+import { useSubscription } from '@/hooks/useSubscription';
+import { UpgradeModal } from '@/components/dashboard/UpgradeModal';
 
 interface Service {
   id: string;
@@ -19,8 +21,10 @@ interface Service {
 
 const ServicesPage: React.FC = () => {
   const navigate = useNavigate();
+  const { checkEligibility } = useSubscription();
   const [services, setServices] = useState<Service[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -74,6 +78,20 @@ const ServicesPage: React.FC = () => {
     }
   };
 
+  const handleNewService = () => {
+    // Verificar se o usuário pode criar mais serviços
+    const { allowed, requiresUpgrade } = checkEligibility('multiple_services');
+    
+    // Se já tem serviços e está no plano gratuito, mostrar modal de upgrade
+    if (services.length > 0 && requiresUpgrade) {
+      setShowUpgradeModal(true);
+      return;
+    }
+    
+    // Caso contrário, redirecionar para a página de criação
+    navigate('/dashboard/services/new');
+  };
+
   if (isLoading) {
     return <div className="flex justify-center items-center h-96">Carregando...</div>;
   }
@@ -87,10 +105,8 @@ const ServicesPage: React.FC = () => {
             Gerencie os serviços que você oferece para seus clientes.
           </p>
         </div>
-        <Button asChild>
-          <Link to="/dashboard/services/new">
-            <Plus className="mr-2 h-4 w-4" /> Novo Serviço
-          </Link>
+        <Button onClick={handleNewService}>
+          <Plus className="mr-2 h-4 w-4" /> Novo Serviço
         </Button>
       </div>
 
@@ -150,14 +166,19 @@ const ServicesPage: React.FC = () => {
           <p className="text-gray-500 mt-1">
             Você ainda não criou nenhum serviço. Comece criando seu primeiro serviço.
           </p>
-          <Button className="mt-4" asChild>
-            <Link to="/dashboard/services/new">
-              <Plus className="mr-2 h-4 w-4" />
-              Criar Serviço
-            </Link>
+          <Button className="mt-4" onClick={handleNewService}>
+            <Plus className="mr-2 h-4 w-4" />
+            Criar Serviço
           </Button>
         </div>
       )}
+
+      <UpgradeModal 
+        open={showUpgradeModal}
+        onClose={() => setShowUpgradeModal(false)}
+        featureName="criar múltiplos serviços"
+        origin="dashboard"
+      />
     </div>
   );
 };

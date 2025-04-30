@@ -2,6 +2,8 @@
 import React from 'react';
 import { CheckCircle, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Link } from 'react-router-dom';
+import { cn } from '@/lib/utils';
 
 interface PlanFeature {
   name: string;
@@ -23,7 +25,7 @@ const plans: PricingPlan[] = [
     name: 'Plano Gratuito',
     price: 'R$ 0',
     description: 'Ideal para começar a organizar sua agenda.',
-    buttonText: 'Começar Grátis',
+    buttonText: 'Criar Conta Grátis – sem cartão',
     buttonVariant: 'outline',
     features: [
       { name: '1 link de agendamento ativo', included: true },
@@ -40,7 +42,7 @@ const plans: PricingPlan[] = [
     name: 'Plano Profissional',
     price: 'R$ 29',
     description: 'Todas as ferramentas para profissionais.',
-    buttonText: 'Teste Grátis por 30 Dias',
+    buttonText: 'Quero testar o plano Pro por 30 dias',
     buttonVariant: 'default',
     popular: true,
     features: [
@@ -52,6 +54,7 @@ const plans: PricingPlan[] = [
       { name: 'Personalização avançada', included: true },
       { name: 'Cancelamentos automáticos', included: true },
       { name: 'Lembretes por e-mail', included: true },
+      { name: 'Página com slug personalizado', included: true },
     ],
   },
 ];
@@ -65,14 +68,18 @@ export const PricingSection: React.FC = () => {
           <p className="mt-3 text-lg text-gray-500">
             Escolha o plano que melhor se adapta às suas necessidades.
           </p>
+          <p className="mt-2 text-md text-primary-500 font-medium">
+            Cada profissional recebe um link exclusivo como horacerta.app/joana-terapeuta
+          </p>
         </div>
         <div className="mt-16 grid grid-cols-1 gap-y-10 gap-x-6 lg:grid-cols-2 lg:max-w-4xl lg:mx-auto xl:max-w-none xl:grid-cols-2">
           {plans.map((plan) => (
             <div
               key={plan.name}
-              className={`rounded-lg shadow-sm divide-y divide-gray-200 overflow-hidden ${
-                plan.popular ? 'border-2 border-primary-500' : 'border border-gray-200'
-              }`}
+              className={cn(
+                "rounded-lg shadow-sm divide-y divide-gray-200 overflow-hidden",
+                plan.popular ? "border-2 border-primary-500" : "border border-gray-200"
+              )}
             >
               {plan.popular && (
                 <div className="bg-primary-500 py-2 text-center">
@@ -88,9 +95,17 @@ export const PricingSection: React.FC = () => {
                 <p className="mt-2 text-sm text-gray-500">{plan.description}</p>
                 <Button
                   variant={plan.buttonVariant}
-                  className={`mt-6 w-full ${plan.popular ? 'bg-primary-500 hover:bg-primary-600' : ''}`}
+                  className={cn(
+                    "mt-6 w-full", 
+                    plan.popular 
+                      ? "bg-primary-500 hover:bg-primary-600 text-white" 
+                      : ""
+                  )}
+                  asChild
                 >
-                  {plan.buttonText}
+                  <Link to="/register">
+                    {plan.buttonText}
+                  </Link>
                 </Button>
               </div>
               <div className="bg-white py-6 px-6 space-y-4">
@@ -105,7 +120,7 @@ export const PricingSection: React.FC = () => {
                           <X className="h-5 w-5 text-gray-300" />
                         )}
                       </div>
-                      <p className={`ml-3 text-sm ${feature.included ? 'text-gray-700' : 'text-gray-400'}`}>
+                      <p className={cn("ml-3 text-sm", feature.included ? "text-gray-700" : "text-gray-400")}>
                         {feature.name}
                       </p>
                     </li>

@@ -15,6 +15,27 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
+import { z } from 'zod';
+
+// Máscara para telefone brasileiro
+const applyPhoneMask = (value: string) => {
+  if (!value) return '';
+  value = value.replace(/\D/g, '');
+  if (value.length <= 2) {
+    return value;
+  }
+  if (value.length <= 7) {
+    return `(${value.slice(0, 2)}) ${value.slice(2)}`;
+  }
+  return `(${value.slice(0, 2)}) ${value.slice(2, 7)}-${value.slice(7, 11)}`;
+};
+
+const validationSchema = z.object({
+  name: z.string().min(1, 'Nome é obrigatório').max(50, 'Nome deve ter no máximo 50 caracteres'),
+  email: z.string().email('E-mail inválido').max(100, 'E-mail deve ter no máximo 100 caracteres'),
+  phone: z.string().min(14, 'Telefone inválido').max(15, 'Telefone inválido'),
+  notes: z.string().max(300, 'As observações devem ter no máximo 300 caracteres').optional(),
+});
 
 const availableTimes = [
   '09:00',
@@ -37,13 +58,40 @@ const PublicBookingPage: React.FC = () => {
     phone: '',
     notes: '',
   });
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
-    setFormData({
-      ...formData,
-      [name]: value,
-    });
+    
+    if (name === 'phone') {
+      setFormData({
+        ...formData,
+        [name]: applyPhoneMask(value),
+      });
+    } else if (name === 'notes') {
+      if (value.length <= 300) {
+        setFormData({
+          ...formData,
+          [name]: value,
+        });
+      }
+    } else {
+      const maxLength = name === 'name' ? 50 : name === 'email' ? 100 : undefined;
+      if (!maxLength || value.length <= maxLength) {
+        setFormData({
+          ...formData,
+          [name]: value,
+        });
+      }
+    }
+    
+    // Limpar erros ao digitar
+    if (formErrors[name]) {
+      setFormErrors({
+        ...formErrors,
+        [name]: '',
+      });
+    }
   };
 
   const handleTimeSelection = (time: string) => {
@@ -60,11 +108,32 @@ const PublicBookingPage: React.FC = () => {
     window.scrollTo(0, 0);
   };
 
+  const validateForm = () => {
+    try {
+      validationSchema.parse(formData);
+      return true;
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        const errors: Record<string, string> = {};
+        error.errors.forEach((err) => {
+          if (err.path[0]) {
+            errors[err.path[0].toString()] = err.message;
+          }
+        });
+        setFormErrors(errors);
+      }
+      return false;
+    }
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    // Process the booking
-    setStep(3);
-    window.scrollTo(0, 0);
+    
+    if (validateForm()) {
+      // Process the booking
+      setStep(3);
+      window.scrollTo(0, 0);
+    }
   };
 
   const renderStepContent = () => {
@@ -163,8 +232,16 @@ const PublicBookingPage: React.FC = () => {
                   name="name"
                   value={formData.name}
                   onChange={handleInputChange}
+                  maxLength={50}
+                  className={formErrors.name ? "border-red-500" : ""}
                   required
                 />
+                {formErrors.name && (
+                  <p className="text-red-500 text-xs mt-1">{formErrors.name}</p>
+                )}
+                <div className="text-xs text-gray-500 flex justify-end">
+                  {formData.name.length}/50
+                </div>
               </div>
               <div className="space-y-2">
                 <label htmlFor="email" className="block text-sm font-medium">
@@ -176,8 +253,16 @@ const PublicBookingPage: React.FC = () => {
                   type="email"
                   value={formData.email}
                   onChange={handleInputChange}
+                  maxLength={100}
+                  className={formErrors.email ? "border-red-500" : ""}
                   required
                 />
+                {formErrors.email && (
+                  <p className="text-red-500 text-xs mt-1">{formErrors.email}</p>
+                )}
+                <div className="text-xs text-gray-500 flex justify-end">
+                  {formData.email.length}/100
+                </div>
               </div>
               <div className="space-y-2">
                 <label htmlFor="phone" className="block text-sm font-medium">
@@ -189,8 +274,13 @@ const PublicBookingPage: React.FC = () => {
                   type="tel"
                   value={formData.phone}
                   onChange={handleInputChange}
+                  placeholder="(00) 00000-0000"
+                  className={formErrors.phone ? "border-red-500" : ""}
                   required
                 />
+                {formErrors.phone && (
+                  <p className="text-red-500 text-xs mt-1">{formErrors.phone}</p>
+                )}
               </div>
               <div className="space-y-2">
                 <label htmlFor="notes" className="block text-sm font-medium">
@@ -201,8 +291,15 @@ const PublicBookingPage: React.FC = () => {
                   name="notes"
                   value={formData.notes}
                   onChange={handleInputChange}
-                  className="resize-none"
+                  maxLength={300}
+                  className={cn("resize-none", formErrors.notes ? "border-red-500" : "")}
                 />
+                {formErrors.notes && (
+                  <p className="text-red-500 text-xs mt-1">{formErrors.notes}</p>
+                )}
+                <div className="text-xs text-gray-500 flex justify-end">
+                  {formData.notes?.length || 0}/300
+                </div>
               </div>
               <div className="mt-6 flex justify-end">
                 <Button type="submit">
