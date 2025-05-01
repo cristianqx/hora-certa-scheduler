@@ -13,6 +13,7 @@ import { DashboardLayout } from "./components/dashboard/DashboardLayout";
 import DashboardPage from "./pages/dashboard/DashboardPage";
 import ServicesPage from "./pages/dashboard/ServicesPage";
 import NewServicePage from "./pages/dashboard/NewServicePage";
+import EditServicePage from "./pages/dashboard/EditServicePage";
 import AvailabilityPage from "./pages/dashboard/AvailabilityPage";
 import ProfilePage from "./pages/dashboard/ProfilePage";
 import PlansPage from "./pages/dashboard/PlansPage";
@@ -42,6 +43,7 @@ const App = () => (
                 <Route index element={<DashboardPage />} />
                 <Route path="services" element={<ServicesPage />} />
                 <Route path="services/new" element={<NewServicePage />} />
+                <Route path="services/:id" element={<EditServicePage />} />
                 <Route path="availability" element={<AvailabilityPage />} />
                 <Route path="appointments" element={<AppointmentsPage />} />
                 <Route path="profile" element={<ProfilePage />} />

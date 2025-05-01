@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
 import { z } from 'zod';
+import { supabase } from '@/integrations/supabase/client';
 
 // Máscara para telefone brasileiro
 const applyPhoneMask = (value: string) => {
@@ -37,14 +38,13 @@ const validationSchema = z.object({
   notes: z.string().max(300, 'As observações devem ter no máximo 300 caracteres').optional(),
 });
 
-const availableTimes = [
-  '09:00',
-  '10:00',
-  '11:00',
-  '14:00',
-  '15:00',
-  '16:00',
-];
+interface Service {
+  id: string;
+  name: string;
+  description: string | null;
+  duration: number;
+  price: string | null;
+}
 
 const PublicBookingPage: React.FC = () => {
   const { username } = useParams<{ username: string }>();
@@ -59,6 +59,87 @@ const PublicBookingPage: React.FC = () => {
     notes: '',
   });
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+  const [availableTimes, setAvailableTimes] = useState<string[]>([]);
+  const [services, setServices] = useState<Service[]>([]);
+  const [selectedService, setSelectedService] = useState<Service | null>(null);
+  const [profileName, setProfileName] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchProfileAndServices = async () => {
+      if (!username) return;
+      
+      setIsLoading(true);
+      try {
+        // Buscar o perfil com base no username
+        // Em uma implementação real, você teria uma tabela para mapear usernames para IDs
+        // Aqui estamos simulando com o slug criado a partir do nome
+        const { data: profiles, error: profileError } = await supabase
+          .from('profiles')
+          .select('id, name');
+        
+        if (profileError) {
+          throw profileError;
+        }
+
+        // Encontrar o perfil que corresponde ao username (slug)
+        const matchedProfile = profiles?.find(profile => {
+          const slug = profile.name
+            .toLowerCase()
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .replace(/[^\w\s]/gi, '')
+            .replace(/\s+/g, '-');
+          return slug === username;
+        });
+
+        if (matchedProfile) {
+          setProfileName(matchedProfile.name);
+          
+          // Buscar serviços deste profissional
+          const { data: servicesData, error: servicesError } = await supabase
+            .from('services')
+            .select('*')
+            .eq('user_id', matchedProfile.id)
+            .eq('active', true);
+          
+          if (servicesError) {
+            throw servicesError;
+          }
+          
+          setServices(servicesData || []);
+          if (servicesData && servicesData.length > 0) {
+            setSelectedService(servicesData[0]);
+          }
+        } else {
+          // Usuário não encontrado
+          console.error('Profissional não encontrado');
+        }
+      } catch (error) {
+        console.error('Erro ao carregar informações:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchProfileAndServices();
+  }, [username]);
+
+  // Gerar horários disponíveis para o dia selecionado
+  useEffect(() => {
+    if (date) {
+      // Em uma implementação real, você buscaria os horários disponíveis da API
+      // Aqui estamos gerando horários fixos para demonstração
+      setAvailableTimes([
+        '09:00',
+        '10:00',
+        '11:00',
+        '14:00',
+        '15:00',
+        '16:00',
+      ]);
+    }
+  }, [date]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
@@ -98,6 +179,10 @@ const PublicBookingPage: React.FC = () => {
     setSelectedTime(time);
   };
 
+  const handleServiceSelection = (service: Service) => {
+    setSelectedService(service);
+  };
+
   const goToNextStep = () => {
     setStep(step + 1);
     window.scrollTo(0, 0);
@@ -130,11 +215,42 @@ const PublicBookingPage: React.FC = () => {
     e.preventDefault();
     
     if (validateForm()) {
+      // Em uma implementação real, você salvaria o agendamento no banco de dados
       // Process the booking
       setStep(3);
       window.scrollTo(0, 0);
     }
   };
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
+      </div>
+    );
+  }
+
+  if (!profileName) {
+    return (
+      <div className="min-h-screen bg-gray-50 py-12">
+        <div className="max-w-3xl mx-auto px-4 sm:px-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-2xl text-center">Profissional não encontrado</CardTitle>
+              <CardDescription className="text-center">
+                O link que você acessou não corresponde a nenhum profissional cadastrado.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="flex justify-center">
+              <Button onClick={() => navigate('/')}>
+                Voltar para a página inicial
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    );
+  }
 
   const renderStepContent = () => {
     switch (step) {
@@ -144,6 +260,42 @@ const PublicBookingPage: React.FC = () => {
             <div className="flex justify-between">
               <h2 className="text-xl font-semibold">Escolha uma data</h2>
             </div>
+
+            {services.length > 0 ? (
+              <div className="mb-6">
+                <h3 className="text-base font-medium mb-3">Selecione o serviço</h3>
+                <div className="space-y-2">
+                  {services.map((service) => (
+                    <div 
+                      key={service.id}
+                      onClick={() => handleServiceSelection(service)}
+                      className={`p-4 border rounded-lg cursor-pointer ${
+                        selectedService?.id === service.id 
+                          ? 'border-primary-500 bg-primary-50' 
+                          : 'border-gray-200 hover:border-gray-300'
+                      }`}
+                    >
+                      <div className="flex justify-between">
+                        <h4 className="font-medium">{service.name}</h4>
+                        <span className="text-sm text-gray-500">{service.price || 'Grátis'}</span>
+                      </div>
+                      {service.description && (
+                        <p className="text-sm text-gray-500 mt-1">{service.description}</p>
+                      )}
+                      <div className="flex items-center mt-2 text-sm text-gray-500">
+                        <Clock className="h-4 w-4 mr-1" />
+                        <span>{service.duration} minutos</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="text-amber-700 bg-amber-50 p-4 rounded-lg">
+                Nenhum serviço disponível para agendamento.
+              </div>
+            )}
+
             <div className="flex flex-col md:flex-row gap-6">
               <div className="flex-1">
                 <Popover>
@@ -154,6 +306,7 @@ const PublicBookingPage: React.FC = () => {
                         "w-full justify-start text-left font-normal",
                         !date && "text-muted-foreground"
                       )}
+                      disabled={!selectedService}
                     >
                       <CalendarIcon className="mr-2 h-4 w-4" />
                       {date ? format(date, "PPP", { locale: ptBR }) : <span>Selecione uma data</span>}
@@ -173,7 +326,7 @@ const PublicBookingPage: React.FC = () => {
               </div>
             </div>
 
-            {date && (
+            {date && availableTimes.length > 0 && (
               <div className="mt-6">
                 <h3 className="text-lg font-medium mb-4">Horários disponíveis em {format(date, "EEEE, d 'de' MMMM", { locale: ptBR })}</h3>
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
@@ -192,7 +345,10 @@ const PublicBookingPage: React.FC = () => {
             )}
 
             <div className="mt-6 flex justify-end">
-              <Button disabled={!date || !selectedTime} onClick={goToNextStep}>
+              <Button 
+                disabled={!date || !selectedTime || !selectedService} 
+                onClick={goToNextStep}
+              >
                 Continuar
               </Button>
             </div>
@@ -212,7 +368,7 @@ const PublicBookingPage: React.FC = () => {
             <div className="bg-primary-50 rounded-lg p-4 mb-6">
               <div className="flex items-center mb-2">
                 <CalendarIcon className="h-4 w-4 text-primary-500 mr-2" />
-                <span className="font-medium">Consulta com João Pedro</span>
+                <span className="font-medium">{selectedService?.name} com {profileName}</span>
               </div>
               <div className="flex items-center">
                 <Clock className="h-4 w-4 text-primary-500 mr-2" />
@@ -323,7 +479,7 @@ const PublicBookingPage: React.FC = () => {
             <div className="bg-primary-50 rounded-lg p-6 mb-6 max-w-md mx-auto">
               <div className="flex items-center mb-2">
                 <CalendarIcon className="h-5 w-5 text-primary-500 mr-2" />
-                <span className="font-medium">Consulta com João Pedro</span>
+                <span className="font-medium">{selectedService?.name} com {profileName}</span>
               </div>
               <div className="flex items-center mb-4">
                 <Clock className="h-5 w-5 text-primary-500 mr-2" />
@@ -349,10 +505,12 @@ const PublicBookingPage: React.FC = () => {
         <Card>
           <CardHeader>
             <div className="w-14 h-14 bg-primary-100 rounded-full flex items-center justify-center text-primary-700 font-medium mb-4">
-              JP
+              {profileName && profileName.split(' ').map(n => n[0]).join('').toUpperCase()}
             </div>
-            <CardTitle className="text-2xl">Agendar com João Pedro</CardTitle>
-            <CardDescription>Terapeuta</CardDescription>
+            <CardTitle className="text-2xl">Agendar com {profileName}</CardTitle>
+            <CardDescription>
+              {selectedService ? `${selectedService.name} - ${selectedService.duration} minutos` : 'Selecione um serviço para continuar'}
+            </CardDescription>
           </CardHeader>
           <CardContent>
             {renderStepContent()}

@@ -1,12 +1,48 @@
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Calendar, Users, ClipboardCheck, ChevronRight } from 'lucide-react';
+import { Calendar, Users, ClipboardCheck, ChevronRight, Check, Copy } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { toast } from 'sonner';
+import { supabase } from '@/integrations/supabase/client';
 
 const DashboardPage: React.FC = () => {
+  const [username, setUsername] = useState<string>('');
+  const [copying, setCopying] = useState(false);
+  
+  useEffect(() => {
+    const fetchUserProfile = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('name')
+            .eq('id', session.user.id)
+            .single();
+            
+          if (profile) {
+            // Simplificando o nome para criar um slug básico para o usuário
+            const slug = profile.name
+              .toLowerCase()
+              .normalize('NFD')
+              .replace(/[\u0300-\u036f]/g, '')
+              .replace(/[^\w\s]/gi, '')
+              .replace(/\s+/g, '-');
+              
+            setUsername(slug);
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching user profile:', error);
+      }
+    };
+    
+    fetchUserProfile();
+  }, []);
+
   const stats = [
     { 
       name: 'Agendamentos Hoje', 
@@ -43,6 +79,24 @@ const DashboardPage: React.FC = () => {
     { id: 2, client: 'Carlos Oliveira', service: 'Sessão de Acompanhamento', date: '2025-04-30T16:00:00', status: 'confirmed' },
     { id: 3, client: 'Marina Costa', service: 'Consulta Inicial', date: '2025-05-01T10:00:00', status: 'confirmed' },
   ];
+
+  const handleCopyLink = async () => {
+    if (!username) return;
+    
+    const bookingLink = `${window.location.origin}/booking/${username}`;
+    
+    try {
+      setCopying(true);
+      await navigator.clipboard.writeText(bookingLink);
+      toast.success('Link copiado para a área de transferência!');
+    } catch (err) {
+      console.error('Falha ao copiar o link:', err);
+      toast.error('Não foi possível copiar o link');
+    } finally {
+      setCopying(false);
+      setTimeout(() => setCopying(false), 2000);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -135,9 +189,24 @@ const DashboardPage: React.FC = () => {
               <Input 
                 readOnly 
                 className="bg-gray-50" 
-                value="horacerta.app/joaopedro"
+                value={username ? `${window.location.origin}/booking/${username}` : 'Carregando...'}
               />
-              <Button variant="outline" className="ml-2">Copiar</Button>
+              <Button 
+                variant="outline" 
+                className="ml-2" 
+                onClick={handleCopyLink}
+                disabled={!username || copying}
+              >
+                {copying ? (
+                  <>
+                    <Check className="h-4 w-4 mr-1" /> Copiado
+                  </>
+                ) : (
+                  <>
+                    <Copy className="h-4 w-4 mr-1" /> Copiar
+                  </>
+                )}
+              </Button>
             </div>
             <div className="mt-6 space-y-3">
               <div className="flex items-center justify-between">

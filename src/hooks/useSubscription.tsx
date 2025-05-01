@@ -53,18 +53,14 @@ export const SubscriptionProvider = ({ children }: { children: ReactNode }) => {
       
       // Usando type assertion para evitar erros do TypeScript com tabelas personalizadas
       const { data: subscription, error } = await supabase
-        .from('user_subscriptions' as any)
+        .from('user_subscriptions')
         .select('*')
         .eq('user_id', session.user.id)
         .single();
       
       if (error && error.code !== 'PGRST116') { // PGRST116 é "no rows returned"
+        // Apenas loga o erro sem mostrar toast (evita pop-up constante)
         console.error('Erro ao carregar assinatura:', error);
-        toast({
-          title: 'Erro ao carregar plano',
-          description: 'Não foi possível verificar sua assinatura',
-          variant: 'destructive',
-        });
       }
       
       if (subscription) {
