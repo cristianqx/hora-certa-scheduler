@@ -52,9 +52,12 @@ export const SubscriptionProvider = ({ children }: { children: ReactNode }) => {
       }
       
       try {
-        // Use a raw query since the table might not exist in TypeScript types
+        // Use the RPC function with proper typing
         const { data: subscriptionData, error: subscriptionError } = await supabase
-          .rpc('get_user_subscription', { user_id: session.user.id });
+          .rpc('get_user_subscription', { user_id: session.user.id }) as { 
+            data: UserSubscription | null;
+            error: Error | null;
+          };
           
         if (subscriptionError) {
           // If there's an error with the RPC function, fallback to free plan
