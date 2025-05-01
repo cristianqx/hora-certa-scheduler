@@ -15,7 +15,7 @@ interface SubscriptionContextType {
   reloadSubscription: () => Promise<void>;
 }
 
-// Definição dos tipos para user_subscriptions
+// Interface para a tabela user_subscriptions
 interface UserSubscription {
   id: string;
   user_id: string;
@@ -51,37 +51,41 @@ export const SubscriptionProvider = ({ children }: { children: ReactNode }) => {
         return;
       }
       
-      // Usando type assertion para evitar erros do TypeScript com tabelas personalizadas
-      const { data: subscription, error } = await supabase
-        .from('user_subscriptions')
-        .select('*')
-        .eq('user_id', session.user.id)
-        .single();
-      
-      if (error && error.code !== 'PGRST116') { // PGRST116 é "no rows returned"
-        // Apenas loga o erro sem mostrar toast (evita pop-up constante)
-        console.error('Erro ao carregar assinatura:', error);
-      }
-      
-      if (subscription) {
-        // Convertendo para unknown primeiro para evitar erros de tipo
-        const userSub = subscription as unknown as UserSubscription;
-        setPlan(userSub.status === 'trialing' ? 'trialing' : userSub.plan as SubscriptionStatus);
-        
-        if (userSub.trial_ends_at) {
-          setTrialEndsAt(new Date(userSub.trial_ends_at));
+      try {
+        // Use a raw query since the table might not exist in TypeScript types
+        const { data: subscriptionData, error: subscriptionError } = await supabase
+          .rpc('get_user_subscription', { user_id: session.user.id });
+          
+        if (subscriptionError) {
+          // If there's an error with the RPC function, fallback to free plan
+          console.log('No subscription found, defaulting to free plan');
+          setPlan('free');
+          setTrialEndsAt(null);
+          setCurrentPeriodEnd(null);
+        } else if (subscriptionData) {
+          // Process subscription data if available
+          setPlan(subscriptionData.status === 'trialing' ? 'trialing' : subscriptionData.plan as SubscriptionStatus);
+          
+          if (subscriptionData.trial_ends_at) {
+            setTrialEndsAt(new Date(subscriptionData.trial_ends_at));
+          }
+          
+          if (subscriptionData.current_period_end) {
+            setCurrentPeriodEnd(new Date(subscriptionData.current_period_end));
+          }
+        } else {
+          // Default to free plan if no subscription is found
+          setPlan('free');
+          setTrialEndsAt(null);
+          setCurrentPeriodEnd(null);
         }
-        
-        if (userSub.current_period_end) {
-          setCurrentPeriodEnd(new Date(userSub.current_period_end));
-        }
-      } else {
-        setPlan('free');
-        setTrialEndsAt(null);
-        setCurrentPeriodEnd(null);
+      } catch (error) {
+        console.error('Error in subscription check:', error);
+        setPlan('free'); // Default to free plan on error
       }
     } catch (error) {
-      console.error('Erro ao verificar assinatura:', error);
+      console.error('Error checking authentication:', error);
+      setPlan('free'); // Default to free plan on any error
     } finally {
       setIsLoading(false);
     }
