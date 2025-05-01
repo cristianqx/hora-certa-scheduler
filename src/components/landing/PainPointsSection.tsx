@@ -9,7 +9,7 @@ import {
   ListVideo, 
   EyeOff, 
   RotateCcw,
-  ClockOff,
+  AlarmClockOff,  // Replacing ClockOff with AlarmClockOff
   FileX
 } from 'lucide-react';
 
@@ -48,7 +48,7 @@ const painPoints = [
   },
   {
     name: 'Falta de previsibilidade e rotina',
-    icon: ClockOff,
+    icon: AlarmClockOff,  // Changed from ClockOff to AlarmClockOff
   },
   {
     name: 'Depender de papel, planilhas ou ferramentas complicadas',
