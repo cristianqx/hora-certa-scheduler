@@ -10,7 +10,7 @@ export const PrivateRoute = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    // First, setup auth state change listener
+    // Set up auth state change listener FIRST
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, currentSession) => {
       console.log('Auth state change:', event);
       
@@ -21,6 +21,11 @@ export const PrivateRoute = () => {
       // Handle sign out
       if (event === 'SIGNED_OUT') {
         navigate('/login');
+      }
+      
+      // Explicitly handle SIGNED_IN to ensure we redirect when a token comes in
+      if (event === 'SIGNED_IN') {
+        navigate('/dashboard');
       }
     });
     

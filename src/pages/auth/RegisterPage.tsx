@@ -44,7 +44,7 @@ const RegisterPage = () => {
       setIsLoading(true);
       
       // Sign up with Supabase
-      const { data: authData, error: authError } = await supabase.auth.signUp({
+      const { data, error } = await supabase.auth.signUp({
         email: values.email,
         password: values.password,
         options: {
@@ -54,14 +54,32 @@ const RegisterPage = () => {
         }
       });
       
-      if (authError) {
-        throw authError;
+      if (error) {
+        throw error;
       }
 
-      toast.success('Conta criada com sucesso!');
-
-      // Redirect to dashboard after successful signup
-      navigate('/dashboard');
+      if (data && data.user) {
+        // Create profile manually to ensure it exists
+        const { error: profileError } = await supabase
+          .from('profiles')
+          .insert([{
+            id: data.user.id,
+            name: values.name,
+            email: values.email
+          }]);
+          
+        if (profileError) {
+          console.error('Error creating profile:', profileError);
+          // We'll continue since the auth trigger should handle this, but log for debugging
+        }
+        
+        toast.success('Conta criada com sucesso!');
+        
+        // Redirect to dashboard after successful signup
+        navigate('/dashboard');
+      } else {
+        toast.error('Erro ao criar conta. Tente novamente.');
+      }
       
     } catch (error: any) {
       console.error('Signup error:', error);

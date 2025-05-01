@@ -50,10 +50,14 @@ const LoginPage: React.FC = () => {
         throw error;
       }
       
-      toast.success('Login realizado com sucesso!');
-      
-      // Redirect to dashboard after successful login
-      navigate('/dashboard');
+      if (data && data.user) {
+        toast.success('Login realizado com sucesso!');
+        
+        // Redirect to dashboard after successful login
+        navigate('/dashboard');
+      } else {
+        toast.error('Credenciais inválidas.');
+      }
       
     } catch (error: any) {
       console.error('Login error:', error);
