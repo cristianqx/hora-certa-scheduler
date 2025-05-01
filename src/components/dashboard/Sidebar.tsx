@@ -1,55 +1,88 @@
-
 import React from 'react';
-import { NavLink } from 'react-router-dom';
-import { Calendar, Clock, User, Settings, BarChart3, LogOut } from 'lucide-react';
-import { Logo } from '@/components/Logo';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
-
-const navigation = [
-  { name: 'Dashboard', href: '/dashboard', icon: BarChart3 },
-  { name: 'Serviços', href: '/dashboard/services', icon: Calendar },
-  { name: 'Disponibilidade', href: '/dashboard/availability', icon: Clock },
-  { name: 'Perfil', href: '/dashboard/profile', icon: User },
-  { name: 'Configurações', href: '/dashboard/settings', icon: Settings },
-];
+import { buttonVariants } from '@/components/ui/button';
+import { 
+  LayoutDashboard, 
+  CalendarClock, 
+  Clock, 
+  User, 
+  CreditCard, 
+  Settings, 
+  PanelLeft,
+  CalendarDays
+} from 'lucide-react';
 
 interface SidebarProps {
   className?: string;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ className }) => {
+export const Sidebar = ({ className }: SidebarProps) => {
+  const navigate = useNavigate();
+  const { pathname } = useLocation();
+
+  const items = [
+    {
+      icon: LayoutDashboard,
+      href: '/dashboard',
+      label: 'Dashboard',
+      active: pathname === '/dashboard',
+    },
+    {
+      icon: CalendarDays,
+      href: '/dashboard/appointments',
+      label: 'Agendamentos',
+      active: pathname === '/dashboard/appointments',
+    },
+    {
+      icon: CalendarClock,
+      href: '/dashboard/services',
+      label: 'Serviços',
+      active: pathname.includes('/dashboard/services'),
+    },
+    {
+      icon: Clock,
+      href: '/dashboard/availability',
+      label: 'Disponibilidade',
+      active: pathname === '/dashboard/availability',
+    },
+    {
+      icon: User,
+      href: '/dashboard/profile',
+      label: 'Perfil',
+      active: pathname === '/dashboard/profile',
+    },
+    {
+      icon: CreditCard,
+      href: '/dashboard/plans',
+      label: 'Planos',
+      active: pathname === '/dashboard/plans',
+    }
+  ];
+  
   return (
-    <div className={cn("flex flex-col h-full bg-white shadow-sm border-r", className)}>
-      <div className="px-4 py-6">
-        <Logo />
-      </div>
-      <div className="px-2 space-y-1 flex-1 overflow-y-auto">
-        {navigation.map((item) => (
-          <NavLink
-            key={item.name}
-            to={item.href}
-            className={({ isActive }) =>
-              cn(
-                'flex items-center px-4 py-2 text-sm font-medium rounded-md',
-                isActive
-                  ? 'bg-primary-100 text-primary-700'
-                  : 'text-gray-600 hover:bg-gray-100'
-              )
-            }
-          >
-            <item.icon className="mr-3 h-5 w-5" />
-            {item.name}
-          </NavLink>
-        ))}
-      </div>
-      <div className="px-2 pb-6">
-        <NavLink
-          to="/logout"
-          className="flex items-center px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-md"
-        >
-          <LogOut className="mr-3 h-5 w-5" />
-          Sair
-        </NavLink>
+    <div className={cn("flex flex-col space-y-4 py-4", className)}>
+      <div className="px-3 py-2">
+        <h2 className="mb-2 px-4 text-lg font-semibold tracking-tight">
+          Dashboard
+        </h2>
+        <div className="space-y-1">
+          {items.map((item) => (
+            <Link
+              key={item.href}
+              to={item.href}
+              className={cn(
+                buttonVariants({ variant: 'ghost', size: 'sm' }),
+                'w-full font-normal justify-start',
+                item.active && 'bg-secondary hover:bg-secondary',
+                'px-4 py-2',
+              )}
+            >
+              <item.icon className="mr-2 h-4 w-4" />
+              <span>{item.label}</span>
+            </Link>
+          ))}
+        </div>
       </div>
     </div>
   );

@@ -51,12 +51,18 @@ const LoginPage: React.FC = () => {
       }
       
       toast.success('Login realizado com sucesso!');
+      
       // Redirect to dashboard after successful login
       navigate('/dashboard');
       
     } catch (error: any) {
       console.error('Login error:', error);
-      toast.error(error.message || 'Erro ao fazer login. Verifique suas credenciais.');
+      
+      if (error.message.includes('Invalid login')) {
+        toast.error('Email ou senha inválidos.');
+      } else {
+        toast.error(error.message || 'Erro ao fazer login. Verifique suas credenciais.');
+      }
     } finally {
       setIsLoading(false);
     }
@@ -144,12 +150,14 @@ const LoginPage: React.FC = () => {
             <div className="mt-6 grid grid-cols-2 gap-3">
               <button
                 type="button"
+                disabled={isLoading}
                 className="w-full inline-flex justify-center py-2 px-4 border border-gray-300 rounded-md shadow-sm bg-white text-sm font-medium text-gray-500 hover:bg-gray-50"
               >
                 Google
               </button>
               <button
                 type="button"
+                disabled={isLoading}
                 className="w-full inline-flex justify-center py-2 px-4 border border-gray-300 rounded-md shadow-sm bg-white text-sm font-medium text-gray-500 hover:bg-gray-50"
               >
                 Microsoft

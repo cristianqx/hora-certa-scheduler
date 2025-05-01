@@ -19,18 +19,14 @@ import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 
 const registerSchema = z.object({
-  name: z.string().min(2, 'Nome deve ter pelo menos 2 caracteres'),
+  name: z.string().min(3, 'Nome é obrigatório'),
   email: z.string().email('Email inválido'),
-  password: z.string().min(6, 'Senha deve ter pelo menos 6 caracteres'),
-  confirmPassword: z.string(),
-}).refine((data) => data.password === data.confirmPassword, {
-  message: 'As senhas não coincidem',
-  path: ['confirmPassword'],
+  password: z.string().min(6, 'Senha precisa ter no mínimo 6 caracteres'),
 });
 
 type RegisterFormValues = z.infer<typeof registerSchema>;
 
-const RegisterPage: React.FC = () => {
+const RegisterPage = () => {
   const navigate = useNavigate();
   const [isLoading, setIsLoading] = useState(false);
   
@@ -40,7 +36,6 @@ const RegisterPage: React.FC = () => {
       name: '',
       email: '',
       password: '',
-      confirmPassword: '',
     },
   });
 
@@ -48,29 +43,34 @@ const RegisterPage: React.FC = () => {
     try {
       setIsLoading(true);
       
-      const { data, error } = await supabase.auth.signUp({
+      // Sign up with Supabase
+      const { data: authData, error: authError } = await supabase.auth.signUp({
         email: values.email,
         password: values.password,
         options: {
           data: {
             name: values.name,
-          }
+          },
         }
       });
       
-      if (error) {
-        throw error;
+      if (authError) {
+        throw authError;
       }
-      
-      toast.success('Conta criada com sucesso!', {
-        description: 'Você já pode fazer login.',
-      });
-      
-      navigate('/login');
+
+      toast.success('Conta criada com sucesso!');
+
+      // Redirect to dashboard after successful signup
+      navigate('/dashboard');
       
     } catch (error: any) {
-      console.error('Erro no registro:', error);
-      toast.error(error.message || 'Erro ao criar conta. Tente novamente.');
+      console.error('Signup error:', error);
+      
+      if (error.message.includes('already registered')) {
+        toast.error('Email já cadastrado. Tente fazer login.');
+      } else {
+        toast.error(error.message || 'Erro ao criar conta. Tente novamente.');
+      }
     } finally {
       setIsLoading(false);
     }
@@ -88,7 +88,7 @@ const RegisterPage: React.FC = () => {
         <p className="mt-2 text-center text-sm text-gray-600">
           Já possui uma conta?{' '}
           <Link to="/login" className="font-medium text-primary-600 hover:text-primary-500">
-            Entre aqui
+            Entrar aqui
           </Link>
         </p>
       </div>
@@ -102,7 +102,7 @@ const RegisterPage: React.FC = () => {
                 name="name"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Nome Completo</FormLabel>
+                    <FormLabel>Nome</FormLabel>
                     <FormControl>
                       <Input placeholder="Seu nome completo" {...field} />
                     </FormControl>
@@ -139,23 +139,13 @@ const RegisterPage: React.FC = () => {
                 )}
               />
 
-              <FormField
-                control={form.control}
-                name="confirmPassword"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Confirmar Senha</FormLabel>
-                    <FormControl>
-                      <Input type="password" placeholder="********" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
               <div>
-                <Button type="submit" className="w-full" disabled={isLoading}>
-                  {isLoading ? 'Cadastrando...' : 'Cadastrar'}
+                <Button 
+                  type="submit" 
+                  className="w-full"
+                  disabled={isLoading}
+                >
+                  {isLoading ? 'Criando conta...' : 'Criar conta'}
                 </Button>
               </div>
             </form>
@@ -173,12 +163,14 @@ const RegisterPage: React.FC = () => {
 
             <div className="mt-6 grid grid-cols-2 gap-3">
               <button
+                disabled={isLoading}
                 type="button"
                 className="w-full inline-flex justify-center py-2 px-4 border border-gray-300 rounded-md shadow-sm bg-white text-sm font-medium text-gray-500 hover:bg-gray-50"
               >
                 Google
               </button>
               <button
+                disabled={isLoading}
                 type="button"
                 className="w-full inline-flex justify-center py-2 px-4 border border-gray-300 rounded-md shadow-sm bg-white text-sm font-medium text-gray-500 hover:bg-gray-50"
               >

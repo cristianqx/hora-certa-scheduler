@@ -16,6 +16,7 @@ import NewServicePage from "./pages/dashboard/NewServicePage";
 import AvailabilityPage from "./pages/dashboard/AvailabilityPage";
 import ProfilePage from "./pages/dashboard/ProfilePage";
 import PlansPage from "./pages/dashboard/PlansPage";
+import AppointmentsPage from "./pages/dashboard/AppointmentsPage";
 import { PrivateRoute } from "./components/auth/PrivateRoute";
 import { SubscriptionProvider } from "./hooks/useSubscription";
 
@@ -42,6 +43,7 @@ const App = () => (
                 <Route path="services" element={<ServicesPage />} />
                 <Route path="services/new" element={<NewServicePage />} />
                 <Route path="availability" element={<AvailabilityPage />} />
+                <Route path="appointments" element={<AppointmentsPage />} />
                 <Route path="profile" element={<ProfilePage />} />
                 <Route path="plans" element={<PlansPage />} />
               </Route>
