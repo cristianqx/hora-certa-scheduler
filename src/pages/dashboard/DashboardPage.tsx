@@ -10,11 +10,22 @@ import { supabase } from '@/integrations/supabase/client';
 import { format, addDays } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
+interface Appointment {
+  id: string;
+  client_email: string;
+  client_name: string;
+  start_time: string;
+  status?: string;
+  service?: {
+    name: string;
+  };
+}
+
 const DashboardPage: React.FC = () => {
   const [username, setUsername] = useState<string>('');
   const [copying, setCopying] = useState(false);
   const [serviceCount, setServiceCount] = useState(0);
-  const [upcomingAppointments, setUpcomingAppointments] = useState<any[]>([]);
+  const [upcomingAppointments, setUpcomingAppointments] = useState<Appointment[]>([]);
   const [stats, setStats] = useState({
     appointmentsToday: 0,
     appointmentsWeek: 0,
@@ -81,7 +92,7 @@ const DashboardPage: React.FC = () => {
           // Contagem de clientes únicos
           const { data: allAppointments } = await supabase
             .from('appointments')
-            .select('client_email')
+            .select('client_email, status')
             .eq('provider_id', session.user.id);
 
           // Próximos agendamentos
@@ -96,8 +107,8 @@ const DashboardPage: React.FC = () => {
           setUpcomingAppointments(upcoming || []);
           
           // Cálculo de estatísticas
-          const uniqueClients = new Set((allAppointments || []).map(app => app.client_email)).size;
-          const confirmedCount = (allAppointments || []).filter(app => app.status === 'confirmed').length;
+          const uniqueClients = new Set((allAppointments || []).map((app: Appointment) => app.client_email)).size;
+          const confirmedCount = (allAppointments || []).filter((app: Appointment) => app.status === 'confirmed').length;
           const confirmationRate = allAppointments && allAppointments.length > 0
             ? Math.round((confirmedCount / allAppointments.length) * 100)
             : 0;

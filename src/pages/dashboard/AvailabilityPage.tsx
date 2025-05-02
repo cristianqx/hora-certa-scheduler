@@ -57,10 +57,12 @@ interface Availability {
   day_of_week: string;
   start_time: string;
   end_time: string;
+  user_id?: string;
 }
 
 interface BlockedTime {
   id?: string;
+  user_id?: string;
   date: string | null;
   start_time: string;
   end_time: string;
@@ -69,8 +71,18 @@ interface BlockedTime {
   recurring: boolean;
 }
 
+type DaysOfWeek = {
+  monday: boolean;
+  tuesday: boolean;
+  wednesday: boolean;
+  thursday: boolean;
+  friday: boolean;
+  saturday: boolean;
+  sunday: boolean;
+};
+
 const AvailabilityPage: React.FC = () => {
-  const [selectedDays, setSelectedDays] = useState({
+  const [selectedDays, setSelectedDays] = useState<DaysOfWeek>({
     monday: true,
     tuesday: true,
     wednesday: true,
@@ -93,30 +105,40 @@ const AvailabilityPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState("weekly");
   const [isLoading, setIsLoading] = useState(true);
   const [breakTime, setBreakTime] = useState("0");
+  const [user, setUser] = useState<{ id: string } | null>(null);
 
   useEffect(() => {
-    loadAvailability();
+    // Get the current user session
+    const getCurrentUser = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        setUser({ id: session.user.id });
+        loadAvailability(session.user.id);
+      }
+    };
+    getCurrentUser();
   }, []);
 
-  const loadAvailability = async () => {
+  const loadAvailability = async (userId: string) => {
     setIsLoading(true);
     try {
       // Carregar configurações de disponibilidade semanal
       const { data: availData, error: availError } = await supabase
         .from('availability')
         .select('*')
+        .eq('user_id', userId)
         .order('day_of_week');
 
       if (availError) throw availError;
 
       // Converter para o formato usado pelo componente
       const availObj: Record<string, Availability> = {};
-      const daysEnabled: Record<string, boolean> = { ...selectedDays };
+      const daysEnabled: DaysOfWeek = { ...selectedDays };
       
       if (availData && availData.length > 0) {
         availData.forEach((item: Availability) => {
           availObj[item.day_of_week] = item;
-          daysEnabled[item.day_of_week] = true;
+          daysEnabled[item.day_of_week as keyof DaysOfWeek] = true;
         });
         setSelectedDays(daysEnabled);
       }
@@ -127,6 +149,7 @@ const AvailabilityPage: React.FC = () => {
       const { data: blockedData, error: blockedError } = await supabase
         .from('blocked_times')
         .select('*')
+        .eq('user_id', userId)
         .order('date', { ascending: true });
 
       if (blockedError) throw blockedError;
@@ -143,13 +166,18 @@ const AvailabilityPage: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
+    if (!user) {
+      toast.error('Usuário não autenticado');
+      return;
+    }
+    
     try {
       // Salvar disponibilidade semanal
       const promises = [];
 
       // Para cada dia selecionado, criar/atualizar registro
       for (const day of days) {
-        if (selectedDays[day.id as keyof typeof selectedDays]) {
+        if (selectedDays[day.id as keyof DaysOfWeek]) {
           const availData = availability[day.id] || {
             day_of_week: day.id,
             start_time: "09:00",
@@ -175,7 +203,8 @@ const AvailabilityPage: React.FC = () => {
                 .insert({
                   day_of_week: day.id,
                   start_time: availData.start_time,
-                  end_time: availData.end_time
+                  end_time: availData.end_time,
+                  user_id: user.id
                 })
             );
           }
@@ -195,7 +224,9 @@ const AvailabilityPage: React.FC = () => {
       toast.success('Disponibilidade atualizada com sucesso!');
       
       // Recarregar dados para sincronização
-      loadAvailability();
+      if (user) {
+        loadAvailability(user.id);
+      }
     } catch (error) {
       console.error('Erro ao salvar disponibilidade:', error);
       toast.error('Não foi possível salvar as configurações');
@@ -229,6 +260,11 @@ const AvailabilityPage: React.FC = () => {
       return;
     }
 
+    if (!user) {
+      toast.error('Usuário não autenticado');
+      return;
+    }
+
     try {
       const blockData = {
         date: format(blockDate, 'yyyy-MM-dd'),
@@ -236,7 +272,8 @@ const AvailabilityPage: React.FC = () => {
         end_time: blockEndTime,
         all_day: blockAllDay,
         notes: blockNotes || null,
-        recurring: blockRecurring
+        recurring: blockRecurring,
+        user_id: user.id
       };
       
       if (editingBlockId) {
@@ -255,7 +292,9 @@ const AvailabilityPage: React.FC = () => {
       }
       
       // Atualizar lista de horários bloqueados
-      await loadAvailability();
+      if (user) {
+        await loadAvailability(user.id);
+      }
       setBlockDialog(false);
     } catch (error) {
       console.error('Erro ao salvar bloqueio:', error);
@@ -272,7 +311,9 @@ const AvailabilityPage: React.FC = () => {
           .eq('id', id);
         
         toast.success('Bloqueio removido com sucesso');
-        await loadAvailability();
+        if (user) {
+          await loadAvailability(user.id);
+        }
       } catch (error) {
         console.error('Erro ao remover bloqueio:', error);
         toast.error('Não foi possível remover o bloqueio');
@@ -284,9 +325,9 @@ const AvailabilityPage: React.FC = () => {
     setAvailability(prev => ({
       ...prev,
       [day]: {
-        ...prev[day] || { day_of_week: day },
+        ...(prev[day] || { day_of_week: day, start_time: "09:00", end_time: "17:00" }),
         [field]: value
-      }
+      } as Availability
     }));
   };
 
@@ -324,9 +365,12 @@ const AvailabilityPage: React.FC = () => {
                     <div key={day.id} className="flex items-center space-x-2">
                       <Checkbox
                         id={day.id}
-                        checked={selectedDays[day.id as keyof typeof selectedDays]}
+                        checked={selectedDays[day.id as keyof DaysOfWeek]}
                         onCheckedChange={(checked) => {
-                          setSelectedDays({ ...selectedDays, [day.id]: !!checked });
+                          setSelectedDays({
+                            ...selectedDays,
+                            [day.id]: !!checked
+                          });
                         }}
                       />
                       <Label htmlFor={day.id}>{day.label}</Label>
