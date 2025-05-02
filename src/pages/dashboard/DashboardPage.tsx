@@ -7,16 +7,29 @@ import { Calendar, Users, ClipboardCheck, ChevronRight, Check, Copy } from 'luci
 import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
+import { format, addDays } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
 
 const DashboardPage: React.FC = () => {
   const [username, setUsername] = useState<string>('');
   const [copying, setCopying] = useState(false);
+  const [serviceCount, setServiceCount] = useState(0);
+  const [upcomingAppointments, setUpcomingAppointments] = useState<any[]>([]);
+  const [stats, setStats] = useState({
+    appointmentsToday: 0,
+    appointmentsWeek: 0,
+    totalClients: 0,
+    confirmationRate: '0%'
+  });
+  const [isLoading, setIsLoading] = useState(true);
   
   useEffect(() => {
-    const fetchUserProfile = async () => {
+    const fetchData = async () => {
+      setIsLoading(true);
       try {
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.user) {
+          // Buscar perfil do usuário
           const { data: profile } = await supabase
             .from('profiles')
             .select('name')
@@ -34,51 +47,77 @@ const DashboardPage: React.FC = () => {
               
             setUsername(slug);
           }
+
+          // Contar serviços ativos
+          const { count: servicesCount } = await supabase
+            .from('services')
+            .select('*', { count: 'exact', head: true })
+            .eq('user_id', session.user.id)
+            .eq('active', true);
+          
+          setServiceCount(servicesCount || 0);
+
+          // Buscar agendamentos
+          const today = new Date();
+          const todayStr = format(today, 'yyyy-MM-dd');
+          const nextWeekStr = format(addDays(today, 7), 'yyyy-MM-dd');
+
+          // Agendamentos de hoje
+          const { data: todayAppointments } = await supabase
+            .from('appointments')
+            .select('*')
+            .eq('provider_id', session.user.id)
+            .gte('start_time', `${todayStr}T00:00:00`)
+            .lte('start_time', `${todayStr}T23:59:59`);
+
+          // Agendamentos da semana
+          const { data: weekAppointments } = await supabase
+            .from('appointments')
+            .select('*')
+            .eq('provider_id', session.user.id)
+            .gte('start_time', `${todayStr}T00:00:00`)
+            .lte('start_time', `${nextWeekStr}T23:59:59`);
+
+          // Contagem de clientes únicos
+          const { data: allAppointments } = await supabase
+            .from('appointments')
+            .select('client_email')
+            .eq('provider_id', session.user.id);
+
+          // Próximos agendamentos
+          const { data: upcoming } = await supabase
+            .from('appointments')
+            .select('*, service:service_id (name)')
+            .eq('provider_id', session.user.id)
+            .gte('start_time', `${todayStr}T00:00:00`)
+            .order('start_time', { ascending: true })
+            .limit(3);
+
+          setUpcomingAppointments(upcoming || []);
+          
+          // Cálculo de estatísticas
+          const uniqueClients = new Set((allAppointments || []).map(app => app.client_email)).size;
+          const confirmedCount = (allAppointments || []).filter(app => app.status === 'confirmed').length;
+          const confirmationRate = allAppointments && allAppointments.length > 0
+            ? Math.round((confirmedCount / allAppointments.length) * 100)
+            : 0;
+
+          setStats({
+            appointmentsToday: todayAppointments?.length || 0,
+            appointmentsWeek: weekAppointments?.length || 0,
+            totalClients: uniqueClients,
+            confirmationRate: `${confirmationRate}%`
+          });
         }
       } catch (error) {
-        console.error('Error fetching user profile:', error);
+        console.error('Error fetching dashboard data:', error);
+      } finally {
+        setIsLoading(false);
       }
     };
     
-    fetchUserProfile();
+    fetchData();
   }, []);
-
-  const stats = [
-    { 
-      name: 'Agendamentos Hoje', 
-      value: '3', 
-      icon: Calendar, 
-      change: '+20%',
-      changeType: 'increase' 
-    },
-    { 
-      name: 'Agendamentos esta Semana', 
-      value: '12', 
-      icon: Calendar, 
-      change: '+5%',
-      changeType: 'increase' 
-    },
-    { 
-      name: 'Total de Clientes', 
-      value: '24', 
-      icon: Users, 
-      change: '+12%',
-      changeType: 'increase' 
-    },
-    { 
-      name: 'Taxa de Confirmação', 
-      value: '94%', 
-      icon: ClipboardCheck, 
-      change: '+2%',
-      changeType: 'increase' 
-    },
-  ];
-
-  const upcomingAppointments = [
-    { id: 1, client: 'Ana Silva', service: 'Consulta Inicial', date: '2025-04-30T14:30:00', status: 'confirmed' },
-    { id: 2, client: 'Carlos Oliveira', service: 'Sessão de Acompanhamento', date: '2025-04-30T16:00:00', status: 'confirmed' },
-    { id: 3, client: 'Marina Costa', service: 'Consulta Inicial', date: '2025-05-01T10:00:00', status: 'confirmed' },
-  ];
 
   const handleCopyLink = async () => {
     if (!username) return;
@@ -98,6 +137,10 @@ const DashboardPage: React.FC = () => {
     }
   };
 
+  if (isLoading) {
+    return <div className="flex justify-center items-center h-96">Carregando...</div>;
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
@@ -113,20 +156,57 @@ const DashboardPage: React.FC = () => {
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        {stats.map((stat) => (
-          <Card key={stat.name}>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">{stat.name}</CardTitle>
-              <stat.icon className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{stat.value}</div>
-              <p className={`text-xs ${stat.changeType === 'increase' ? 'text-green-500' : 'text-red-500'}`}>
-                {stat.change} em relação ao período anterior
-              </p>
-            </CardContent>
-          </Card>
-        ))}
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Agendamentos Hoje</CardTitle>
+            <Calendar className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{stats.appointmentsToday}</div>
+            <p className="text-xs text-muted-foreground">
+              Agendamentos para o dia atual
+            </p>
+          </CardContent>
+        </Card>
+        
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Agendamentos esta Semana</CardTitle>
+            <Calendar className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{stats.appointmentsWeek}</div>
+            <p className="text-xs text-muted-foreground">
+              Próximos 7 dias
+            </p>
+          </CardContent>
+        </Card>
+        
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Total de Clientes</CardTitle>
+            <Users className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{stats.totalClients}</div>
+            <p className="text-xs text-muted-foreground">
+              Clientes únicos
+            </p>
+          </CardContent>
+        </Card>
+        
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Taxa de Confirmação</CardTitle>
+            <ClipboardCheck className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{stats.confirmationRate}</div>
+            <p className="text-xs text-muted-foreground">
+              Agendamentos confirmados
+            </p>
+          </CardContent>
+        </Card>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
@@ -136,37 +216,37 @@ const DashboardPage: React.FC = () => {
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {upcomingAppointments.map((appointment) => {
-                const appointmentDate = new Date(appointment.date);
-                const formattedDate = appointmentDate.toLocaleDateString('pt-BR', { 
-                  weekday: 'long', 
-                  year: 'numeric', 
-                  month: 'long', 
-                  day: 'numeric' 
-                });
-                const formattedTime = appointmentDate.toLocaleTimeString('pt-BR', { 
-                  hour: '2-digit', 
-                  minute: '2-digit' 
-                });
-                
-                return (
-                  <div key={appointment.id} className="flex items-center gap-3 border-b border-gray-100 pb-3 last:border-0 last:pb-0">
-                    <div className="w-14 h-14 bg-primary-50 rounded-full flex items-center justify-center text-primary-700 font-medium">
-                      {appointment.client.split(' ').map(n => n[0]).join('')}
-                    </div>
-                    <div className="flex-1">
-                      <h4 className="font-medium">{appointment.client}</h4>
-                      <p className="text-sm text-muted-foreground">{appointment.service}</p>
-                      <div className="text-xs text-gray-500 mt-1">
-                        {formattedDate} · {formattedTime}
+              {upcomingAppointments.length > 0 ? (
+                upcomingAppointments.map((appointment) => {
+                  const appointmentDate = new Date(appointment.start_time);
+                  const formattedDate = format(appointmentDate, "EEEE, dd 'de' MMMM", { locale: ptBR });
+                  const formattedTime = format(appointmentDate, "HH:mm");
+                  
+                  return (
+                    <div key={appointment.id} className="flex items-center gap-3 border-b border-gray-100 pb-3 last:border-0 last:pb-0">
+                      <div className="w-14 h-14 bg-primary-50 rounded-full flex items-center justify-center text-primary-700 font-medium">
+                        {appointment.client_name.split(' ').map((n: string) => n[0]).join('')}
                       </div>
+                      <div className="flex-1">
+                        <h4 className="font-medium">{appointment.client_name}</h4>
+                        <p className="text-sm text-muted-foreground">{appointment.service ? appointment.service.name : 'Serviço'}</p>
+                        <div className="text-xs text-gray-500 mt-1">
+                          {formattedDate} · {formattedTime}
+                        </div>
+                      </div>
+                      <Button size="icon" variant="ghost" asChild>
+                        <Link to={`/dashboard/appointments`}>
+                          <ChevronRight className="h-4 w-4" />
+                        </Link>
+                      </Button>
                     </div>
-                    <Button size="icon" variant="ghost">
-                      <ChevronRight className="h-4 w-4" />
-                    </Button>
-                  </div>
-                );
-              })}
+                  );
+                })
+              ) : (
+                <div className="text-center py-4 text-muted-foreground">
+                  Nenhum agendamento futuro
+                </div>
+              )}
             </div>
             <div className="mt-4 text-center">
               <Button variant="link" asChild>
@@ -211,7 +291,7 @@ const DashboardPage: React.FC = () => {
             <div className="mt-6 space-y-3">
               <div className="flex items-center justify-between">
                 <div className="text-sm">Serviços Ativos</div>
-                <div className="text-sm font-medium">1 de 1</div>
+                <div className="text-sm font-medium">{serviceCount} de {serviceCount}</div>
               </div>
               <div className="flex items-center justify-between">
                 <div className="text-sm">Links de Agendamento</div>

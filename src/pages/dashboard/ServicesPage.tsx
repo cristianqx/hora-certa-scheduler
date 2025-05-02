@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Plus, Edit, Trash, Clock, Calendar } from 'lucide-react';
+import { Plus, Edit, Trash2, Clock, Calendar } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
@@ -38,26 +38,30 @@ const ServicesPage: React.FC = () => {
   }, [navigate]);
   
   useEffect(() => {
-    const loadServices = async () => {
-      setIsLoading(true);
-      
+    loadServices();
+  }, []);
+
+  const loadServices = async () => {
+    setIsLoading(true);
+    
+    try {
       const { data, error } = await supabase
         .from('services')
         .select('*')
         .order('created_at', { ascending: false });
       
       if (error) {
-        console.error('Error loading services:', error);
-        toast.error('Erro ao carregar serviços');
-      } else {
-        setServices(data || []);
+        throw error;
       }
       
+      setServices(data || []);
+    } catch (error: any) {
+      console.error('Error loading services:', error);
+      toast.error('Erro ao carregar serviços');
+    } finally {
       setIsLoading(false);
-    };
-    
-    loadServices();
-  }, []);
+    }
+  };
 
   const handleDelete = async (id: string) => {
     if (confirm('Tem certeza que deseja excluir este serviço?')) {
@@ -69,7 +73,8 @@ const ServicesPage: React.FC = () => {
         
         if (error) throw error;
         
-        setServices(services.filter(service => service.id !== id));
+        // Recarregar serviços do banco após a exclusão para garantir sincronização
+        await loadServices();
         toast.success('Serviço excluído com sucesso');
       } catch (error: any) {
         console.error('Error deleting service:', error);
@@ -97,7 +102,7 @@ const ServicesPage: React.FC = () => {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-6 max-h-full overflow-y-auto">
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Serviços</h1>
@@ -150,7 +155,7 @@ const ServicesPage: React.FC = () => {
                   size="sm" 
                   onClick={() => handleDelete(service.id)}
                 >
-                  <Trash className="h-4 w-4 mr-1" />
+                  <Trash2 className="h-4 w-4 mr-1" />
                   <span>Excluir</span>
                 </Button>
               </CardFooter>

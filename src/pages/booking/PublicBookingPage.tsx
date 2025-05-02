@@ -1,9 +1,9 @@
 
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { format } from 'date-fns';
+import { format, parseISO, addMinutes } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Calendar as CalendarIcon, Clock, CheckCircle, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Calendar as CalendarIcon, Clock, CheckCircle, ChevronLeft, Calendar as CalendarCheck } from 'lucide-react';
 import { Calendar } from '@/components/ui/calendar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -17,6 +17,7 @@ import {
 import { cn } from '@/lib/utils';
 import { z } from 'zod';
 import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner';
 
 // Máscara para telefone brasileiro
 const applyPhoneMask = (value: string) => {
@@ -46,6 +47,22 @@ interface Service {
   price: string | null;
 }
 
+interface BlockedTime {
+  id: string;
+  date: string | null;
+  start_time: string;
+  end_time: string;
+  all_day: boolean;
+  recurring: boolean;
+}
+
+interface Appointment {
+  id: string;
+  start_time: string;
+  end_time: string;
+  service_id: string;
+}
+
 const PublicBookingPage: React.FC = () => {
   const { username } = useParams<{ username: string }>();
   const navigate = useNavigate();
@@ -64,82 +81,221 @@ const PublicBookingPage: React.FC = () => {
   const [selectedService, setSelectedService] = useState<Service | null>(null);
   const [profileName, setProfileName] = useState('');
   const [isLoading, setIsLoading] = useState(true);
+  const [providerId, setProviderId] = useState<string | null>(null);
+  const [existingAppointments, setExistingAppointments] = useState<Appointment[]>([]);
+  const [blockedTimes, setBlockedTimes] = useState<BlockedTime[]>([]);
+  const [blockedDates, setBlockedDates] = useState<Date[]>([]);
 
   useEffect(() => {
-    const fetchProfileAndServices = async () => {
+    const checkAuthAndFetchData = async () => {
       if (!username) return;
       
-      setIsLoading(true);
       try {
-        // Buscar o perfil com base no username
-        // Em uma implementação real, você teria uma tabela para mapear usernames para IDs
-        // Aqui estamos simulando com o slug criado a partir do nome
-        const { data: profiles, error: profileError } = await supabase
-          .from('profiles')
-          .select('id, name');
+        // Verificar se já existe sessão ativa
+        const { data: { session } } = await supabase.auth.getSession();
         
-        if (profileError) {
-          throw profileError;
-        }
-
-        // Encontrar o perfil que corresponde ao username (slug)
-        const matchedProfile = profiles?.find(profile => {
-          const slug = profile.name
-            .toLowerCase()
-            .normalize('NFD')
-            .replace(/[\u0300-\u036f]/g, '')
-            .replace(/[^\w\s]/gi, '')
-            .replace(/\s+/g, '-');
-          return slug === username;
-        });
-
-        if (matchedProfile) {
-          setProfileName(matchedProfile.name);
-          
-          // Buscar serviços deste profissional
-          const { data: servicesData, error: servicesError } = await supabase
-            .from('services')
-            .select('*')
-            .eq('user_id', matchedProfile.id)
-            .eq('active', true);
-          
-          if (servicesError) {
-            throw servicesError;
-          }
-          
-          setServices(servicesData || []);
-          if (servicesData && servicesData.length > 0) {
-            setSelectedService(servicesData[0]);
-          }
-        } else {
-          // Usuário não encontrado
-          console.error('Profissional não encontrado');
+        // Se usuário estiver autenticado, redirecionar para o dashboard
+        if (session?.user) {
+          navigate('/dashboard');
+          return;
         }
       } catch (error) {
-        console.error('Erro ao carregar informações:', error);
-      } finally {
-        setIsLoading(false);
+        console.error('Erro ao verificar autenticação:', error);
       }
+      
+      await fetchProfileAndServices();
     };
+    
+    checkAuthAndFetchData();
+  }, [username, navigate]);
 
-    fetchProfileAndServices();
-  }, [username]);
+  const fetchProfileAndServices = async () => {
+    if (!username) return;
+    
+    setIsLoading(true);
+    try {
+      // Buscar o perfil com base no username
+      // Em uma implementação real, você teria uma tabela para mapear usernames para IDs
+      // Aqui estamos simulando com o slug criado a partir do nome
+      const { data: profiles, error: profileError } = await supabase
+        .from('profiles')
+        .select('id, name');
+      
+      if (profileError) {
+        throw profileError;
+      }
+
+      // Encontrar o perfil que corresponde ao username (slug)
+      const matchedProfile = profiles?.find(profile => {
+        const slug = profile.name
+          .toLowerCase()
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .replace(/[^\w\s]/gi, '')
+          .replace(/\s+/g, '-');
+        return slug === username;
+      });
+
+      if (matchedProfile) {
+        setProfileName(matchedProfile.name);
+        setProviderId(matchedProfile.id);
+        
+        // Buscar serviços deste profissional
+        const { data: servicesData, error: servicesError } = await supabase
+          .from('services')
+          .select('*')
+          .eq('user_id', matchedProfile.id)
+          .eq('active', true);
+        
+        if (servicesError) {
+          throw servicesError;
+        }
+        
+        setServices(servicesData || []);
+        if (servicesData && servicesData.length > 0) {
+          setSelectedService(servicesData[0]);
+        }
+        
+        // Buscar bloqueios de datas
+        const { data: blockedData, error: blockedError } = await supabase
+          .from('blocked_times')
+          .select('*')
+          .eq('user_id', matchedProfile.id);
+          
+        if (blockedError) {
+          throw blockedError;
+        }
+        
+        setBlockedTimes(blockedData || []);
+        
+        // Criar lista de datas bloqueadas para o calendário
+        const blockedDatesArray: Date[] = [];
+        blockedData?.forEach(block => {
+          if (block.date && block.all_day) {
+            blockedDatesArray.push(new Date(block.date));
+          }
+        });
+        setBlockedDates(blockedDatesArray);
+        
+        // Buscar agendamentos existentes
+        const { data: appointmentsData, error: appointmentsError } = await supabase
+          .from('appointments')
+          .select('id, start_time, end_time, service_id')
+          .eq('provider_id', matchedProfile.id);
+          
+        if (appointmentsError) {
+          throw appointmentsError;
+        }
+        
+        setExistingAppointments(appointmentsData || []);
+      } else {
+        // Usuário não encontrado
+        console.error('Profissional não encontrado');
+      }
+    } catch (error) {
+      console.error('Erro ao carregar informações:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Verificar se um horário específico está bloqueado
+  const isTimeBlocked = (dateStr: string, timeStr: string) => {
+    // Verificar se existe agendamento neste horário
+    const timeToCheck = `${dateStr}T${timeStr}:00`;
+    
+    const hasAppointment = existingAppointments.some(app => {
+      const appStart = new Date(app.start_time).getTime();
+      const appEnd = new Date(app.end_time).getTime();
+      const checkTime = new Date(timeToCheck).getTime();
+      
+      return checkTime >= appStart && checkTime < appEnd;
+    });
+    
+    if (hasAppointment) return true;
+    
+    // Verificar se cai em um bloqueio de horário específico
+    const dayOfWeek = format(new Date(dateStr), 'EEEE', { locale: ptBR });
+    const foundBlock = blockedTimes.some(block => {
+      // Se é bloqueio recorrente e o dia da semana corresponde
+      if (block.recurring && dayOfWeek.toLowerCase() === block.date) {
+        const blockStart = block.start_time;
+        const blockEnd = block.end_time;
+        return timeStr >= blockStart && timeStr < blockEnd;
+      }
+      
+      // Se é bloqueio para data específica
+      if (block.date === dateStr) {
+        if (block.all_day) return true;
+        
+        const blockStart = block.start_time;
+        const blockEnd = block.end_time;
+        return timeStr >= blockStart && timeStr < blockEnd;
+      }
+      
+      return false;
+    });
+    
+    return foundBlock;
+  };
 
   // Gerar horários disponíveis para o dia selecionado
   useEffect(() => {
-    if (date) {
-      // Em uma implementação real, você buscaria os horários disponíveis da API
-      // Aqui estamos gerando horários fixos para demonstração
-      setAvailableTimes([
-        '09:00',
-        '10:00',
-        '11:00',
-        '14:00',
-        '15:00',
-        '16:00',
-      ]);
+    if (date && selectedService) {
+      const dateStr = format(date, 'yyyy-MM-dd');
+      
+      // Buscar a disponibilidade do profissional para este dia da semana
+      const fetchAvailability = async () => {
+        try {
+          const dayOfWeek = format(date, 'EEEE', { locale: ptBR }).toLowerCase();
+          
+          if (!providerId) return;
+          
+          const { data, error } = await supabase
+            .from('availability')
+            .select('*')
+            .eq('user_id', providerId)
+            .eq('day_of_week', dayOfWeek);
+            
+          if (error) throw error;
+          
+          if (data && data.length > 0) {
+            const { start_time: startTime, end_time: endTime } = data[0];
+            
+            // Gerar horários a cada 30 minutos entre início e fim
+            const times: string[] = [];
+            let timePointer = startTime;
+            const serviceDuration = selectedService.duration;
+            
+            while (timePointer <= endTime) {
+              // Verificar se este horário não está bloqueado
+              if (!isTimeBlocked(dateStr, timePointer)) {
+                times.push(timePointer);
+              }
+              
+              // Avançar para próximo horário considerando duração do serviço
+              const [hours, minutes] = timePointer.split(':').map(Number);
+              const currentTime = new Date();
+              currentTime.setHours(hours, minutes);
+              
+              // Avançar 30 minutos
+              const newTime = addMinutes(currentTime, 30);
+              timePointer = format(newTime, 'HH:mm');
+            }
+            
+            setAvailableTimes(times);
+          } else {
+            setAvailableTimes([]);
+          }
+        } catch (error) {
+          console.error('Erro ao carregar disponibilidade:', error);
+          setAvailableTimes([]);
+        }
+      };
+      
+      fetchAvailability();
     }
-  }, [date]);
+  }, [date, selectedService, providerId, blockedTimes, existingAppointments]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
@@ -181,6 +337,7 @@ const PublicBookingPage: React.FC = () => {
 
   const handleServiceSelection = (service: Service) => {
     setSelectedService(service);
+    setSelectedTime(null); // Resetar horário ao trocar de serviço
   };
 
   const goToNextStep = () => {
@@ -211,15 +368,59 @@ const PublicBookingPage: React.FC = () => {
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (validateForm()) {
-      // Em uma implementação real, você salvaria o agendamento no banco de dados
-      // Process the booking
+    if (!validateForm() || !date || !selectedTime || !selectedService || !providerId) {
+      toast.error('Por favor, preencha todos os campos corretamente');
+      return;
+    }
+    
+    try {
+      // Calcular horário de término com base na duração do serviço
+      const startTimeStr = `${format(date, 'yyyy-MM-dd')}T${selectedTime}:00`;
+      const startTime = new Date(startTimeStr);
+      const endTime = addMinutes(startTime, selectedService.duration);
+      
+      // Inserir agendamento no Supabase
+      const { data, error } = await supabase
+        .from('appointments')
+        .insert({
+          provider_id: providerId,
+          service_id: selectedService.id,
+          client_name: formData.name,
+          client_email: formData.email,
+          start_time: startTimeStr,
+          end_time: endTime.toISOString(),
+          notes: formData.notes || null,
+          status: 'pending'
+        });
+      
+      if (error) {
+        console.error('Erro ao agendar:', error);
+        throw new Error(error.message);
+      }
+      
+      // Ir para o passo de confirmação
       setStep(3);
       window.scrollTo(0, 0);
+    } catch (error) {
+      console.error('Erro ao agendar:', error);
+      toast.error('Não foi possível realizar o agendamento. Tente novamente.');
     }
+  };
+
+  const handleReset = () => {
+    setDate(undefined);
+    setSelectedTime(null);
+    setStep(1);
+    setFormData({
+      name: '',
+      email: '',
+      phone: '',
+      notes: '',
+    });
+    window.scrollTo(0, 0);
   };
 
   if (isLoading) {
@@ -277,7 +478,15 @@ const PublicBookingPage: React.FC = () => {
                     >
                       <div className="flex justify-between">
                         <h4 className="font-medium">{service.name}</h4>
-                        <span className="text-sm text-gray-500">{service.price || 'Grátis'}</span>
+                        <span className="text-sm text-gray-500">
+                          {service.price ? 
+                            Number(service.price).toLocaleString('pt-BR', {
+                              style: 'currency', 
+                              currency: 'BRL'
+                            }) : 
+                            'Grátis'
+                          }
+                        </span>
                       </div>
                       {service.description && (
                         <p className="text-sm text-gray-500 mt-1">{service.description}</p>
@@ -317,8 +526,15 @@ const PublicBookingPage: React.FC = () => {
                       mode="single"
                       selected={date}
                       onSelect={setDate}
-                      disabled={(date) => date < new Date() || date > new Date(new Date().setMonth(new Date().getMonth() + 2))}
+                      disabled={(date) => 
+                        date < new Date() || 
+                        date > new Date(new Date().setMonth(new Date().getMonth() + 2)) ||
+                        blockedDates.some(blockedDate => 
+                          blockedDate.toDateString() === date?.toDateString()
+                        )
+                      }
                       initialFocus
+                      locale={ptBR}
                       className="pointer-events-auto"
                     />
                   </PopoverContent>
@@ -341,6 +557,12 @@ const PublicBookingPage: React.FC = () => {
                     </Button>
                   ))}
                 </div>
+              </div>
+            )}
+
+            {date && availableTimes.length === 0 && (
+              <div className="mt-6 text-center p-4 bg-yellow-50 text-yellow-700 rounded-lg">
+                Não há horários disponíveis para esta data. Por favor, selecione outra data.
               </div>
             )}
 
@@ -376,6 +598,16 @@ const PublicBookingPage: React.FC = () => {
                   {date && format(date, "EEEE, d 'de' MMMM", { locale: ptBR })} às {selectedTime}
                 </span>
               </div>
+              {selectedService?.price && (
+                <div className="flex items-center mt-2">
+                  <span className="font-medium">
+                    {Number(selectedService.price).toLocaleString('pt-BR', {
+                      style: 'currency',
+                      currency: 'BRL'
+                    })}
+                  </span>
+                </div>
+              )}
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-4">
@@ -487,10 +719,19 @@ const PublicBookingPage: React.FC = () => {
                   {date && format(date, "EEEE, d 'de' MMMM", { locale: ptBR })} às {selectedTime}
                 </span>
               </div>
+              {selectedService?.price && (
+                <div className="font-medium">
+                  {Number(selectedService.price).toLocaleString('pt-BR', {
+                    style: 'currency',
+                    currency: 'BRL'
+                  })}
+                </div>
+              )}
             </div>
 
-            <Button onClick={() => navigate('/')} variant="outline">
-              Voltar para a página inicial
+            <Button onClick={handleReset} variant="outline">
+              <CalendarCheck className="h-4 w-4 mr-2" />
+              Fazer um novo agendamento
             </Button>
           </div>
         );
