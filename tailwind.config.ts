@@ -85,6 +85,10 @@ export default {
 				sans: ['Inter', 'sans-serif'],
 				heading: ['Poppins', 'sans-serif'],
 			},
+			boxShadow: {
+				'modern': '0px 0px 50px 0px rgba(82, 63, 105, 0.15)',
+				'card': '0px 0px 20px 0px rgba(76, 87, 125, 0.02)'
+			},
 			keyframes: {
 				'accordion-down': {
 					from: {
