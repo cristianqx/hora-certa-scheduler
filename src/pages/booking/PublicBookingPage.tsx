@@ -100,6 +100,11 @@ const formatDateWithTZ = (date: Date, timeZone: string = 'America/Sao_Paulo') =>
   });
 };
 
+const zeroSeconds = (d: Date) => {
+  d.setSeconds(0, 0);
+  return d;
+};
+
 const PublicBookingPage: React.FC = () => {
   const { username } = useParams<{ username: string }>();
   const navigate = useNavigate();
@@ -248,117 +253,189 @@ const PublicBookingPage: React.FC = () => {
 
   // Verificar se um horário específico está bloqueado
   const isTimeBlocked = (dateStr: string, timeStr: string) => {
-    // Verificar se existe agendamento neste horário
+    if (!selectedService) return true;
+
+    // Converter o horário para o timezone do profissional
     const timeToCheck = `${dateStr}T${timeStr}:00`;
-    const checkTime = new Date(timeToCheck).getTime();
-    
-    // Verificar agendamentos existentes
+    const checkTime = new Date(timeToCheck);
+    const serviceEnd = addMinutes(checkTime, selectedService.duration);
+
+    // Verificar agendamentos existentes (considerando sobreposição correta)
     const hasAppointment = existingAppointments.some(app => {
-      const appStart = new Date(app.start_time).getTime();
-      const appEnd = new Date(app.end_time).getTime();
-      return checkTime >= appStart && checkTime < appEnd;
+      const appointmentStart = new Date(app.start_time);
+      const appointmentEnd = new Date(app.end_time);
+      // Sobreposição correta: início < fim existente && início existente < fim
+      return (checkTime < appointmentEnd && appointmentStart < serviceEnd);
     });
-    
     if (hasAppointment) return true;
-    
+
     // Verificar bloqueios
-    const dayOfWeek = format(new Date(dateStr), 'EEEE', { locale: ptBR }).toLowerCase();
-    
+    const dayOfWeek = format(checkTime, 'EEEE', { locale: ptBR }).toLowerCase();
+
     return blockedTimes.some(block => {
       // Se é bloqueio recorrente e o dia da semana corresponde
       if (block.recurring && block.date?.toLowerCase() === dayOfWeek) {
         if (block.all_day) return true;
-        
-        const blockStart = new Date(`${dateStr}T${block.start_time}:00`).getTime();
-        const blockEnd = new Date(`${dateStr}T${block.end_time}:00`).getTime();
-        return checkTime >= blockStart && checkTime < blockEnd;
+        const blockStartTime = new Date(`${dateStr}T${block.start_time}:00`);
+        const blockEndTime = new Date(`${dateStr}T${block.end_time}:00`);
+        return checkTime >= blockStartTime && checkTime < blockEndTime;
       }
-      
       // Se é bloqueio para data específica
       if (block.date === dateStr) {
         if (block.all_day) return true;
-        
-        const blockStart = new Date(`${dateStr}T${block.start_time}:00`).getTime();
-        const blockEnd = new Date(`${dateStr}T${block.end_time}:00`).getTime();
-        return checkTime >= blockStart && checkTime < blockEnd;
+        const blockStartTime = new Date(`${dateStr}T${block.start_time}:00`);
+        const blockEndTime = new Date(`${dateStr}T${block.end_time}:00`);
+        return checkTime >= blockStartTime && checkTime < blockEndTime;
       }
-      
       return false;
     });
   };
 
-  // Gerar horários disponíveis para o dia selecionado
+  // Função para gerar horários disponíveis para um dia específico
+  const generateAvailableTimes = async (date: Date, service: Service) => {
+    if (!providerId) return [];
+
+    const dateStr = format(date, 'yyyy-MM-dd');
+    const dayOfWeek = format(date, 'EEEE', { locale: ptBR }).toLowerCase();
+    const dayMap: Record<string, string> = {
+      'segunda-feira': 'monday',
+      'terça-feira': 'tuesday',
+      'quarta-feira': 'wednesday',
+      'quinta-feira': 'thursday',
+      'sexta-feira': 'friday',
+      'sábado': 'saturday',
+      'domingo': 'sunday'
+    };
+    
+    const englishDayOfWeek = dayMap[dayOfWeek];
+    console.log('Gerando horários para:', { dateStr, dayOfWeek, englishDayOfWeek });
+
+    try {
+      // 1. Buscar disponibilidade do profissional para este dia da semana
+      const { data: availability, error: availError } = await supabase
+        .from('availability')
+        .select('*')
+        .eq('user_id', providerId)
+        .eq('day_of_week', englishDayOfWeek)
+        .single();
+
+      if (availError || !availability) {
+        console.log('Nenhuma disponibilidade encontrada para este dia');
+        return [];
+      }
+
+      const { start_time, end_time } = availability;
+      console.log('Horários de trabalho:', { start_time, end_time });
+
+      // 2. Gerar todos os horários possíveis baseado na duração do serviço
+      const times: string[] = [];
+      const start = new Date(`${dateStr}T${start_time}`);
+      const end = new Date(`${dateStr}T${end_time}`);
+      
+      // Gerar intervalos baseados na duração do serviço
+      for (let time = start; time < end; time = addMinutes(time, service.duration)) {
+        const timeStr = formatTimeWithTZ(time, profileTimezone);
+        const serviceEnd = addMinutes(time, service.duration);
+        
+        // Verificar se o serviço termina antes do fim do horário de trabalho
+        if (serviceEnd <= end) {
+          times.push(timeStr);
+        }
+      }
+
+      // 3. Remover horários com agendamentos confirmados
+      const { data: appointments, error: appointmentsError } = await supabase
+        .from('appointments')
+        .select('*')
+        .eq('provider_id', providerId)
+        .eq('status', 'confirmed')
+        .gte('start_time', start.toISOString())
+        .lte('end_time', end.toISOString());
+
+      if (appointmentsError) throw appointmentsError;
+
+      const availableTimes = times.filter(timeStr => {
+        const time = new Date(`${dateStr}T${timeStr}:00`);
+        const timeEnd = addMinutes(time, service.duration);
+
+        // Verificar se há sobreposição com algum agendamento
+        const hasAppointment = appointments?.some(app => {
+          const appStart = new Date(app.start_time);
+          const appEnd = new Date(app.end_time);
+          return (time < appEnd && appStart < timeEnd);
+        });
+
+        return !hasAppointment;
+      });
+
+      // 4. Remover horários bloqueados manualmente
+      // Buscar bloqueios específicos para a data
+      const blockedSpecificResult = await (supabase as any)
+        .from('blocked_times')
+        .select('*')
+        .eq('user_id', providerId)
+        .eq('date', dateStr);
+      const { data: blockedSpecific, error: blockedSpecificError } = blockedSpecificResult;
+
+      // Buscar bloqueios recorrentes para o dia da semana (em inglês)
+      const blockedRecurringResult = await (supabase as any)
+        .from('blocked_times')
+        .select('*')
+        .eq('user_id', providerId)
+        .eq('recurring', true)
+        .eq('weekday', englishDayOfWeek);
+      const { data: blockedRecurring, error: blockedRecurringError } = blockedRecurringResult;
+
+      if (blockedSpecificError || blockedRecurringError) throw blockedSpecificError || blockedRecurringError;
+
+      const blockedTimes = [
+        ...(blockedSpecific || []),
+        ...(blockedRecurring || [])
+      ];
+
+      const toMinutes = (t: string) => {
+        const [h, m] = t.split(':');
+        return parseInt(h) * 60 + parseInt(m);
+      };
+
+      const finalAvailableTimes = availableTimes.filter(timeStr => {
+        // timeStr: '09:00' (string do botão)
+        // blocked.start_time: '09:00:00' (string do banco)
+        // blocked.end_time: '10:00:00'
+        const timeMinutes = toMinutes(timeStr);
+        const serviceEndMinutes = timeMinutes + service.duration;
+
+        // Verifica se há sobreposição com algum bloqueio
+        const isBlocked = blockedTimes.some(block => {
+          if (block.all_day) return true;
+          const blockStart = toMinutes(block.start_time.slice(0,5));
+          const blockEnd = toMinutes(block.end_time.slice(0,5));
+          return (timeMinutes < blockEnd && blockStart < serviceEndMinutes);
+        });
+
+        return !isBlocked;
+      });
+
+      console.log('Horários disponíveis finais:', finalAvailableTimes);
+      return finalAvailableTimes;
+
+    } catch (error) {
+      console.error('Erro ao gerar horários disponíveis:', error);
+      return [];
+    }
+  };
+
+  // Atualizar o useEffect que gera os horários disponíveis
   useEffect(() => {
     if (date && selectedService) {
-      const dateStr = format(date, 'yyyy-MM-dd');
-      
-      // Buscar a disponibilidade do profissional para este dia da semana
-      const fetchAvailability = async () => {
-        try {
-          const dayOfWeek = format(date, 'EEEE', { locale: ptBR }).toLowerCase();
-          const dayMap: Record<string, string> = {
-            'segunda-feira': 'monday',
-            'terça-feira': 'tuesday',
-            'quarta-feira': 'wednesday',
-            'quinta-feira': 'thursday',
-            'sexta-feira': 'friday',
-            'sábado': 'saturday',
-            'domingo': 'sunday'
-          };
-          
-          const englishDayOfWeek = dayMap[dayOfWeek];
-          console.log('Buscando disponibilidade para:', { dateStr, dayOfWeek, englishDayOfWeek });
-          
-          if (!providerId) return;
-          
-          // @ts-ignore - Erro de tipagem do Supabase
-          const { data, error } = await supabase
-            .from('availability')
-            .select('*')
-            .eq('user_id', providerId)
-            .eq('day_of_week', englishDayOfWeek);
-            
-          if (error) {
-            console.error('Erro ao buscar disponibilidade:', error);
-            throw error;
-          }
-          
-          console.log('Disponibilidade encontrada:', data);
-          
-          if (data && data.length > 0) {
-            const { start_time: startTime, end_time: endTime } = data[0];
-            console.log('Horários de trabalho:', { startTime, endTime });
-            
-            // Gerar horários a cada 30 minutos entre início e fim
-            const times: string[] = [];
-            const start = new Date(`${dateStr}T${startTime}`);
-            const end = new Date(`${dateStr}T${endTime}`);
-            
-            for (let time = start; time < end; time = addMinutes(time, 30)) {
-              const timeStr = formatTimeWithTZ(time, profileTimezone);
-              if (!isTimeBlocked(dateStr, timeStr)) {
-                const serviceEnd = addMinutes(time, selectedService.duration);
-                if (serviceEnd <= end) {
-                  times.push(timeStr);
-                }
-              }
-            }
-            
-            console.log('Horários disponíveis:', times);
-            setAvailableTimes(times);
-          } else {
-            console.log('Nenhuma disponibilidade encontrada para este dia');
-            setAvailableTimes([]);
-          }
-        } catch (error) {
-          console.error('Erro ao carregar disponibilidade:', error);
-          setAvailableTimes([]);
-        }
+      const fetchTimes = async () => {
+        const times = await generateAvailableTimes(date, selectedService);
+        setAvailableTimes(times);
       };
       
-      fetchAvailability();
+      fetchTimes();
     }
-  }, [date, selectedService, providerId, blockedTimes, existingAppointments, profileTimezone]);
+  }, [date, selectedService, providerId, profileTimezone]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
@@ -444,9 +521,16 @@ const PublicBookingPage: React.FC = () => {
       const startTimeStr = `${format(date, 'yyyy-MM-dd')}T${selectedTime}:00`;
       const startTime = new Date(startTimeStr);
       const endTime = addMinutes(startTime, selectedService.duration);
-      
-      // Inserir agendamento no Supabase
-      const { data, error } = await supabase
+
+      // Verificar se o horário ainda está disponível
+      const availableTimes = await generateAvailableTimes(date, selectedService);
+      if (!availableTimes.includes(selectedTime)) {
+        toast.error('Este horário não está mais disponível. Por favor, escolha outro horário.');
+        return;
+      }
+
+      // Iniciar uma transação para garantir consistência
+      const { data: appointment, error: appointmentError } = await supabase
         .from('appointments')
         .insert({
           provider_id: providerId,
@@ -457,11 +541,36 @@ const PublicBookingPage: React.FC = () => {
           end_time: endTime.toISOString(),
           notes: formData.notes || null,
           status: 'pending'
-        });
+        })
+        .select()
+        .single();
       
-      if (error) {
-        console.error('Erro ao agendar:', error);
-        throw new Error(error.message);
+      if (appointmentError) {
+        console.error('Erro ao agendar:', appointmentError);
+        throw new Error(appointmentError.message);
+      }
+
+      // Bloquear o horário na tabela blocked_times
+      const { error: blockError } = await supabase
+        .from('blocked_times')
+        .insert({
+          user_id: providerId,
+          date: format(date, 'yyyy-MM-dd'),
+          start_time: selectedTime,
+          end_time: formatTimeWithTZ(endTime, profileTimezone),
+          all_day: false,
+          recurring: false,
+          notes: `Agendamento com ${formData.name} - ${selectedService.name}`
+        });
+
+      if (blockError) {
+        console.error('Erro ao bloquear horário:', blockError);
+        // Se falhar ao bloquear, tenta remover o agendamento
+        await supabase
+          .from('appointments')
+          .delete()
+          .eq('id', appointment.id);
+        throw new Error('Erro ao bloquear horário');
       }
       
       // Ir para o passo de confirmação
