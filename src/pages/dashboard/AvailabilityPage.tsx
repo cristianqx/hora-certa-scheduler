@@ -133,23 +133,12 @@ const AvailabilityPage: React.FC = () => {
 
       // Converter para o formato usado pelo componente
       const availObj: Record<string, Availability> = {};
-      const daysEnabled: DaysOfWeek = { 
-        monday: false,
-        tuesday: false,
-        wednesday: false,
-        thursday: false,
-        friday: false,
-        saturday: false,
-        sunday: false,
-      };
+      const daysEnabled: DaysOfWeek = { ...selectedDays };
       
       if (availData && availData.length > 0) {
         availData.forEach((item: Availability) => {
           availObj[item.day_of_week] = item;
-          // Set days that have availability records to true
-          if (item.day_of_week in daysEnabled) {
-            daysEnabled[item.day_of_week as keyof DaysOfWeek] = true;
-          }
+          daysEnabled[item.day_of_week as keyof DaysOfWeek] = true;
         });
         setSelectedDays(daysEnabled);
       }
@@ -188,13 +177,11 @@ const AvailabilityPage: React.FC = () => {
 
       // Para cada dia selecionado, criar/atualizar registro
       for (const day of days) {
-        const dayId = day.id as keyof DaysOfWeek;
-        if (selectedDays[dayId]) {
+        if (selectedDays[day.id as keyof DaysOfWeek]) {
           const availData = availability[day.id] || {
             day_of_week: day.id,
             start_time: "09:00",
-            end_time: "17:00",
-            user_id: user.id
+            end_time: "17:00"
           };
           
           // Se já existe um registro para este dia
@@ -335,23 +322,13 @@ const AvailabilityPage: React.FC = () => {
   };
 
   const updateDayAvailability = (day: string, field: 'start_time' | 'end_time', value: string) => {
-    setAvailability(prev => {
-      // Create a type-safe copy
-      const newAvailability: Record<string, Availability> = {...prev};
-      
-      // Update or initialize the day's availability
-      newAvailability[day] = {
-        ...(prev[day] || { 
-          day_of_week: day, 
-          start_time: "09:00", 
-          end_time: "17:00",
-          user_id: user?.id || ''
-        }),
+    setAvailability(prev => ({
+      ...prev,
+      [day]: {
+        ...(prev[day] || { day_of_week: day, start_time: "09:00", end_time: "17:00" }),
         [field]: value
-      };
-      
-      return newAvailability;
-    });
+      } as Availability
+    }));
   };
 
   if (isLoading) {
@@ -376,17 +353,14 @@ const AvailabilityPage: React.FC = () => {
         <TabsContent value="weekly">
           <form onSubmit={handleSubmit}>
             <div className="grid gap-6 md:grid-cols-2">
-              <Card className="card-modern">
-                <CardHeader className="card-header-modern">
-                  <CardTitle className="flex items-center gap-2">
-                    <Calendar className="h-5 w-5" />
-                    Dias da semana
-                  </CardTitle>
+              <Card>
+                <CardHeader>
+                  <CardTitle>Dias da semana</CardTitle>
                   <CardDescription>
                     Selecione os dias em que você está disponível para atender.
                   </CardDescription>
                 </CardHeader>
-                <CardContent className="card-content-modern space-y-4">
+                <CardContent className="space-y-4">
                   {days.map((day) => (
                     <div key={day.id} className="flex items-center space-x-2">
                       <Checkbox
@@ -406,17 +380,14 @@ const AvailabilityPage: React.FC = () => {
               </Card>
 
               <div className="space-y-6">
-                <Card className="card-modern">
-                  <CardHeader className="card-header-modern">
-                    <CardTitle className="flex items-center gap-2">
-                      <Clock className="h-5 w-5" />
-                      Horários
-                    </CardTitle>
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Horários</CardTitle>
                     <CardDescription>
                       Defina o horário de início e término para cada dia.
                     </CardDescription>
                   </CardHeader>
-                  <CardContent className="card-content-modern space-y-4">
+                  <CardContent className="space-y-4">
                     {Object.entries(selectedDays)
                       .filter(([_, selected]) => selected)
                       .map(([day, _]) => {
@@ -424,8 +395,7 @@ const AvailabilityPage: React.FC = () => {
                         const availDay = availability[day] || { 
                           day_of_week: day, 
                           start_time: '09:00', 
-                          end_time: '17:00',
-                          user_id: user?.id || ''
+                          end_time: '17:00' 
                         };
                         
                         return (
@@ -475,17 +445,14 @@ const AvailabilityPage: React.FC = () => {
                   </CardContent>
                 </Card>
 
-                <Card className="card-modern">
-                  <CardHeader className="card-header-modern">
-                    <CardTitle className="flex items-center gap-2">
-                      <Clock className="h-5 w-5" />
-                      Intervalos
-                    </CardTitle>
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Intervalos</CardTitle>
                     <CardDescription>
                       Configure o tempo entre agendamentos.
                     </CardDescription>
                   </CardHeader>
-                  <CardContent className="card-content-modern space-y-4">
+                  <CardContent className="space-y-4">
                     <div className="space-y-2">
                       <Label>Tempo de intervalo</Label>
                       <Select value={breakTime} onValueChange={setBreakTime}>
@@ -516,13 +483,10 @@ const AvailabilityPage: React.FC = () => {
         </TabsContent>
         
         <TabsContent value="blocked">
-          <Card className="card-modern">
-            <CardHeader className="card-header-modern flex flex-row items-center justify-between">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
               <div>
-                <CardTitle className="flex items-center gap-2">
-                  <CalendarIcon className="h-5 w-5" />
-                  Dias e Horários Bloqueados
-                </CardTitle>
+                <CardTitle>Dias e Horários Bloqueados</CardTitle>
                 <CardDescription>
                   Bloqueie datas específicas ou períodos em que você não estará disponível.
                 </CardDescription>
@@ -531,11 +495,11 @@ const AvailabilityPage: React.FC = () => {
                 <Plus className="mr-2 h-4 w-4" /> Adicionar Bloqueio
               </Button>
             </CardHeader>
-            <CardContent className="card-content-modern">
+            <CardContent>
               {blockedTimes.length > 0 ? (
                 <div className="space-y-4">
                   {blockedTimes.map((block) => (
-                    <div key={block.id} className="flex justify-between items-center border p-4 rounded-lg bg-card shadow-sm">
+                    <div key={block.id} className="flex justify-between items-center border p-4 rounded-lg">
                       <div className="flex items-center space-x-3">
                         <div className="h-10 w-10 rounded-full bg-primary-50 flex items-center justify-center">
                           <CalendarIcon className="h-5 w-5 text-primary-500" />
@@ -623,7 +587,6 @@ const AvailabilityPage: React.FC = () => {
                     selected={blockDate}
                     onSelect={setBlockDate}
                     locale={ptBR}
-                    className="pointer-events-auto"
                   />
                 </PopoverContent>
               </Popover>

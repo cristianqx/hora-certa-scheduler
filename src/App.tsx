@@ -16,65 +16,48 @@ import NewServicePage from "./pages/dashboard/NewServicePage";
 import EditServicePage from "./pages/dashboard/EditServicePage";
 import AvailabilityPage from "./pages/dashboard/AvailabilityPage";
 import ProfilePage from "./pages/dashboard/ProfilePage";
-import SettingsPage from "./pages/dashboard/SettingsPage";
 import PlansPage from "./pages/dashboard/PlansPage";
 import AppointmentsPage from "./pages/dashboard/AppointmentsPage";
 import { PrivateRoute } from "./components/auth/PrivateRoute";
 import { SubscriptionProvider } from "./hooks/useSubscription";
-import { useEffect } from "react";
 
 const queryClient = new QueryClient();
 
-const App = () => {
-  // Apply the saved theme on app load
-  useEffect(() => {
-    const storedTheme = localStorage.getItem('theme');
-    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-    
-    if (storedTheme === 'dark' || (!storedTheme && prefersDark)) {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-  }, []);
-
-  return (
-    <QueryClientProvider client={queryClient}>
-      <SubscriptionProvider>
-        <TooltipProvider>
-          <Toaster />
-          <Sonner />
-          <BrowserRouter>
-            <Routes>
-              {/* Public routes */}
-              <Route path="/" element={<LandingPage />} />
-              <Route path="/register" element={<RegisterPage />} />
-              <Route path="/login" element={<LoginPage />} />
-              <Route path="/booking/:username" element={<PublicBookingPage />} />
-              
-              {/* Protected Dashboard routes */}
-              <Route element={<PrivateRoute />}>
-                <Route path="/dashboard" element={<DashboardLayout />}>
-                  <Route index element={<DashboardPage />} />
-                  <Route path="services" element={<ServicesPage />} />
-                  <Route path="services/new" element={<NewServicePage />} />
-                  <Route path="services/:id" element={<EditServicePage />} />
-                  <Route path="availability" element={<AvailabilityPage />} />
-                  <Route path="appointments" element={<AppointmentsPage />} />
-                  <Route path="profile" element={<ProfilePage />} />
-                  <Route path="settings" element={<SettingsPage />} />
-                  <Route path="plans" element={<PlansPage />} />
-                </Route>
+const App = () => (
+  <QueryClientProvider client={queryClient}>
+    <SubscriptionProvider>
+      <TooltipProvider>
+        <Toaster />
+        <Sonner />
+        <BrowserRouter>
+          <Routes>
+            {/* Public routes */}
+            <Route path="/" element={<LandingPage />} />
+            <Route path="/register" element={<RegisterPage />} />
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="/booking/:username" element={<PublicBookingPage />} />
+            
+            {/* Protected Dashboard routes */}
+            <Route element={<PrivateRoute />}>
+              <Route path="/dashboard" element={<DashboardLayout />}>
+                <Route index element={<DashboardPage />} />
+                <Route path="services" element={<ServicesPage />} />
+                <Route path="services/new" element={<NewServicePage />} />
+                <Route path="services/:id" element={<EditServicePage />} />
+                <Route path="availability" element={<AvailabilityPage />} />
+                <Route path="appointments" element={<AppointmentsPage />} />
+                <Route path="profile" element={<ProfilePage />} />
+                <Route path="plans" element={<PlansPage />} />
               </Route>
-              
-              {/* Catch-all route for 404 */}
-              <Route path="*" element={<NotFound />} />
-            </Routes>
-          </BrowserRouter>
-        </TooltipProvider>
-      </SubscriptionProvider>
-    </QueryClientProvider>
-  );
-};
+            </Route>
+            
+            {/* Catch-all route for 404 */}
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </BrowserRouter>
+      </TooltipProvider>
+    </SubscriptionProvider>
+  </QueryClientProvider>
+);
 
 export default App;
