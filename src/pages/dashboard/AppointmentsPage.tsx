@@ -70,34 +70,20 @@ const AppointmentsPage = () => {
       
       if (error) throw error;
       
-      const appointmentsData = data || [];
-      setAppointments(appointmentsData);
+      setAppointments(data || []);
       
       // Extract dates with appointments for highlighting
-      // Handle parsing errors for date fields by checking their validity
-      const validDates = appointmentsData.map(app => {
-        try {
-          return parseISO(app.start_time);
-        } catch (e) {
-          console.error('Invalid date:', app.start_time);
-          return null;
-        }
-      }).filter((date): date is Date => date !== null);
-      
-      setAppointmentDates(validDates);
+      const dates = (data || []).map(app => parseISO(app.start_time));
+      setAppointmentDates(dates);
       
       // Group appointments by date for calendar view
       const monthlyData: Record<string, Appointment[]> = {};
-      appointmentsData.forEach(appointment => {
-        try {
-          const dateKey = format(parseISO(appointment.start_time), 'yyyy-MM-dd');
-          if (!monthlyData[dateKey]) {
-            monthlyData[dateKey] = [];
-          }
-          monthlyData[dateKey].push(appointment);
-        } catch (e) {
-          console.error('Error processing appointment date:', e);
+      (data || []).forEach(appointment => {
+        const dateKey = format(parseISO(appointment.start_time), 'yyyy-MM-dd');
+        if (!monthlyData[dateKey]) {
+          monthlyData[dateKey] = [];
         }
+        monthlyData[dateKey].push(appointment);
       });
       setMonthlyAppointments(monthlyData);
     } catch (error) {
@@ -109,21 +95,11 @@ const AppointmentsPage = () => {
   };
   
   // Filter appointments for the selected date
-  const appointmentsForSelectedDate = appointments.filter(appointment => {
-    try {
-      return isSameDay(parseISO(appointment.start_time), selectedDate);
-    } catch (e) {
-      console.error('Error comparing dates:', e);
-      return false;
-    }
-  }).sort((a, b) => {
-    try {
-      return new Date(a.start_time).getTime() - new Date(b.start_time).getTime();
-    } catch (e) {
-      console.error('Error sorting dates:', e);
-      return 0;
-    }
-  });
+  const appointmentsForSelectedDate = appointments.filter(appointment => 
+    isSameDay(parseISO(appointment.start_time), selectedDate)
+  ).sort((a, b) => 
+    new Date(a.start_time).getTime() - new Date(b.start_time).getTime()
+  );
   
   const handleAppointmentClick = (appointment: Appointment) => {
     setSelectedAppointment(appointment);
@@ -168,24 +144,19 @@ const AppointmentsPage = () => {
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'confirmed':
-        return <Badge className="badge-success">Confirmado</Badge>;
+        return <Badge className="bg-green-500">Confirmado</Badge>;
       case 'canceled':
-        return <Badge className="badge-danger">Cancelado</Badge>;
+        return <Badge className="bg-red-500">Cancelado</Badge>;
       case 'pending':
-        return <Badge className="badge-warning">Pendente</Badge>;
+        return <Badge className="bg-yellow-500">Pendente</Badge>;
       default:
         return <Badge>{status}</Badge>;
     }
   };
 
   const getDayAppointments = (date: Date) => {
-    try {
-      const dateKey = format(date, 'yyyy-MM-dd');
-      return monthlyAppointments[dateKey] || [];
-    } catch (e) {
-      console.error('Error getting day appointments:', e);
-      return [];
-    }
+    const dateKey = format(date, 'yyyy-MM-dd');
+    return monthlyAppointments[dateKey] || [];
   };
   
   const handlePreviousMonth = () => {
@@ -199,22 +170,7 @@ const AppointmentsPage = () => {
   const currentMonth = format(calendarView, 'MMMM yyyy', { locale: ptBR });
   const startDate = startOfMonth(calendarView);
   const endDate = endOfMonth(calendarView);
-  
-  // Fix the issue with creating the array of days
-  // We need to ensure we're creating a valid array of days for the month
-  let daysInMonth: Date[] = [];
-  try {
-    daysInMonth = Array.from(eachDayOfInterval({ start: startDate, end: endDate }));
-  } catch (error) {
-    console.error('Error creating days array:', error);
-    // Provide a fallback solution
-    daysInMonth = [];
-    let currentDate = new Date(startDate);
-    while (currentDate <= endDate) {
-      daysInMonth.push(new Date(currentDate));
-      currentDate.setDate(currentDate.getDate() + 1);
-    }
-  }
+  const daysInMonth = eachDayOfInterval({ start: startDate, end: endDate });
   
   return (
     <div className="space-y-6">
@@ -235,14 +191,14 @@ const AppointmentsPage = () => {
         
         <TabsContent value="list" className="space-y-6">
           <div className="grid gap-6 md:grid-cols-2">
-            <Card className="card-modern md:col-span-1">
-              <CardHeader className="card-header-modern">
+            <Card className="md:col-span-1">
+              <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <CalendarIcon className="h-5 w-5" /> 
                   Calendário
                 </CardTitle>
               </CardHeader>
-              <CardContent className="card-content-modern">
+              <CardContent>
                 <Calendar
                   mode="single"
                   selected={selectedDate}
@@ -263,14 +219,14 @@ const AppointmentsPage = () => {
               </CardContent>
             </Card>
             
-            <Card className="card-modern md:col-span-1">
-              <CardHeader className="card-header-modern">
+            <Card className="md:col-span-1">
+              <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <ClipboardList className="h-5 w-5" />
                   Horários para {format(selectedDate, "dd 'de' MMMM", { locale: ptBR })}
                 </CardTitle>
               </CardHeader>
-              <CardContent className="card-content-modern">
+              <CardContent>
                 <div className="space-y-4">
                   {isLoading ? (
                     <div className="text-center py-4">Carregando...</div>
@@ -278,10 +234,10 @@ const AppointmentsPage = () => {
                     appointmentsForSelectedDate.map((appointment) => (
                       <div 
                         key={appointment.id} 
-                        className="flex items-center gap-4 p-3 border rounded-lg cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                        className="flex items-center gap-4 p-3 border rounded-lg cursor-pointer hover:bg-slate-50 transition-colors"
                         onClick={() => handleAppointmentClick(appointment)}
                       >
-                        <div className="w-12 h-12 bg-primary-50 dark:bg-primary-900/30 rounded-full flex items-center justify-center text-primary-700 dark:text-primary-400">
+                        <div className="w-12 h-12 bg-primary-50 rounded-full flex items-center justify-center text-primary-700">
                           {appointment.client_name.split(' ').map(n => n[0]).join('').toUpperCase()}
                         </div>
                         
@@ -291,11 +247,11 @@ const AppointmentsPage = () => {
                             {getStatusBadge(appointment.status)}
                           </div>
                           
-                          <div className="text-sm text-gray-500 dark:text-gray-400">
+                          <div className="text-sm text-gray-500">
                             {appointment.service?.name || 'Serviço'}
                           </div>
                           
-                          <div className="flex items-center mt-1 text-xs text-gray-500 dark:text-gray-400">
+                          <div className="flex items-center mt-1 text-xs text-gray-500">
                             <Clock className="h-3 w-3 mr-1" />
                             {format(parseISO(appointment.start_time), 'HH:mm')} - 
                             {format(parseISO(appointment.end_time), 'HH:mm')}
@@ -304,7 +260,7 @@ const AppointmentsPage = () => {
                       </div>
                     ))
                   ) : (
-                    <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+                    <div className="text-center py-8 text-gray-500">
                       Nenhum agendamento para esta data.
                     </div>
                   )}
@@ -315,8 +271,8 @@ const AppointmentsPage = () => {
         </TabsContent>
         
         <TabsContent value="calendar">
-          <Card className="card-modern">
-            <CardHeader className="card-header-modern flex flex-row items-center justify-between">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle>Calendário Mensal</CardTitle>
               <div className="flex items-center">
                 <Button variant="outline" size="icon" onClick={handlePreviousMonth}>
@@ -330,7 +286,7 @@ const AppointmentsPage = () => {
                 </Button>
               </div>
             </CardHeader>
-            <CardContent className="card-content-modern">
+            <CardContent>
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -346,20 +302,14 @@ const AppointmentsPage = () => {
                 <TableBody>
                   {Array.from({ length: Math.ceil(daysInMonth.length / 7) }, (_, weekIdx) => {
                     const weekStart = weekIdx * 7;
-                    // Ensure we don't try to access beyond the array length
-                    const endIdx = Math.min(weekStart + 7, daysInMonth.length);
-                    const daysInWeek = daysInMonth.slice(weekStart, endIdx);
+                    const daysInWeek = daysInMonth.slice(weekStart, weekStart + 7);
                     
-                    // Calculate first day of week (0 = Sunday, 6 = Saturday)
+                    // Add empty cells for days before the first day of the month
                     const firstDayOfWeek = daysInWeek[0]?.getDay() || 0;
-                    
-                    // Add empty cells before the first day of the month
                     const emptyCellsBefore = Array(firstDayOfWeek).fill(null);
                     
-                    // Combine empty cells and days
+                    // Add empty cells for days after the last day of the month
                     const filledCells = [...emptyCellsBefore, ...daysInWeek];
-                    
-                    // Add empty cells after the last day to fill the week
                     const emptyCellsAfter = Array(7 - filledCells.length).fill(null);
                     
                     const weekCells = [...filledCells, ...emptyCellsAfter];
@@ -368,7 +318,7 @@ const AppointmentsPage = () => {
                       <TableRow key={`week-${weekIdx}`}>
                         {weekCells.map((day, dayIdx) => {
                           if (!day) {
-                            return <TableCell key={`empty-${weekIdx}-${dayIdx}`} className="h-24"></TableCell>;
+                            return <TableCell key={`empty-${dayIdx}`} className="h-24"></TableCell>;
                           }
                           
                           const isToday = isSameDay(day, new Date());
@@ -380,10 +330,10 @@ const AppointmentsPage = () => {
                             <TableCell 
                               key={`day-${format(day, 'yyyy-MM-dd')}`}
                               className={`h-24 align-top p-1 border ${
-                                isToday ? 'bg-primary-50 dark:bg-primary-900/20' : ''
+                                isToday ? 'bg-primary-50' : ''
                               } ${
                                 isSelected ? 'ring-2 ring-primary' : ''
-                              } hover:bg-gray-50 dark:hover:bg-slate-800/50 cursor-pointer`}
+                              } hover:bg-gray-50 cursor-pointer`}
                               onClick={() => handleDateChange(day)}
                             >
                               <div className="flex flex-col h-full">
@@ -399,9 +349,9 @@ const AppointmentsPage = () => {
                                       <div 
                                         key={app.id}
                                         className={`px-2 py-1 text-xs rounded truncate ${
-                                          app.status === 'canceled' ? 'bg-red-100 dark:bg-red-900/20 text-red-800 dark:text-red-400' :
-                                          app.status === 'confirmed' ? 'bg-green-100 dark:bg-green-900/20 text-green-800 dark:text-green-400' :
-                                          'bg-yellow-100 dark:bg-yellow-900/20 text-yellow-800 dark:text-yellow-400'
+                                          app.status === 'canceled' ? 'bg-red-100 text-red-800' :
+                                          app.status === 'confirmed' ? 'bg-green-100 text-green-800' :
+                                          'bg-yellow-100 text-yellow-800'
                                         }`}
                                         onClick={(e) => {
                                           e.stopPropagation();
@@ -500,7 +450,7 @@ const AppointmentsPage = () => {
                       <Separator />
                       <div>
                         <span className="font-medium mb-1 block">Notas:</span>
-                        <div className="bg-gray-50 dark:bg-slate-800 p-3 rounded-md text-sm">
+                        <div className="bg-gray-50 p-3 rounded-md text-sm">
                           {selectedAppointment.notes}
                         </div>
                       </div>
