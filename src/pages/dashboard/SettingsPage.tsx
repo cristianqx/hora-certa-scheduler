@@ -11,13 +11,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { Check, Mail, Phone, User, Globe, Briefcase } from "lucide-react";
-import { 
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue
-} from "@/components/ui/select";
 
 interface Profile {
   id: string;
