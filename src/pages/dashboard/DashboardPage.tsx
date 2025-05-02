@@ -21,6 +21,11 @@ interface Appointment {
   };
 }
 
+interface AppointmentData {
+  client_email: string;
+  status: string;
+}
+
 const DashboardPage: React.FC = () => {
   const [username, setUsername] = useState<string>('');
   const [copying, setCopying] = useState(false);
@@ -90,10 +95,13 @@ const DashboardPage: React.FC = () => {
             .lte('start_time', `${nextWeekStr}T23:59:59`);
 
           // Contagem de clientes únicos
-          const { data: allAppointments } = await supabase
+          const { data: allAppointmentsData } = await supabase
             .from('appointments')
             .select('client_email, status')
             .eq('provider_id', session.user.id);
+          
+          // Ensure allAppointmentsData is properly typed
+          const allAppointments = allAppointmentsData as AppointmentData[] || [];
 
           // Próximos agendamentos
           const { data: upcoming } = await supabase
@@ -107,8 +115,8 @@ const DashboardPage: React.FC = () => {
           setUpcomingAppointments(upcoming || []);
           
           // Cálculo de estatísticas
-          const uniqueClients = new Set((allAppointments || []).map((app: Appointment) => app.client_email)).size;
-          const confirmedCount = (allAppointments || []).filter((app: Appointment) => app.status === 'confirmed').length;
+          const uniqueClients = new Set(allAppointments.map(app => app.client_email)).size;
+          const confirmedCount = allAppointments.filter(app => app.status === 'confirmed').length;
           const confirmationRate = allAppointments && allAppointments.length > 0
             ? Math.round((confirmedCount / allAppointments.length) * 100)
             : 0;
