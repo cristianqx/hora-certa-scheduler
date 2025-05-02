@@ -128,8 +128,39 @@ export type Database = {
         }
         Relationships: []
       }
+      notifications: {
+        Row: {
+          created_at: string
+          id: string
+          is_read: boolean
+          message: string
+          related_id: string | null
+          type: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_read?: boolean
+          message: string
+          related_id?: string | null
+          type?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_read?: boolean
+          message?: string
+          related_id?: string | null
+          type?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
+          avatar_url: string | null
           bio: string | null
           created_at: string
           email: string
@@ -140,6 +171,7 @@ export type Database = {
           website: string | null
         }
         Insert: {
+          avatar_url?: string | null
           bio?: string | null
           created_at?: string
           email: string
@@ -150,6 +182,7 @@ export type Database = {
           website?: string | null
         }
         Update: {
+          avatar_url?: string | null
           bio?: string | null
           created_at?: string
           email?: string
@@ -193,6 +226,42 @@ export type Database = {
           name?: string
           price?: string | null
           updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      user_settings: {
+        Row: {
+          created_at: string | null
+          date_format: string | null
+          email_notifications: boolean | null
+          id: string
+          push_notifications: boolean | null
+          theme: string | null
+          time_format: string | null
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          date_format?: string | null
+          email_notifications?: boolean | null
+          id?: string
+          push_notifications?: boolean | null
+          theme?: string | null
+          time_format?: string | null
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          date_format?: string | null
+          email_notifications?: boolean | null
+          id?: string
+          push_notifications?: boolean | null
+          theme?: string | null
+          time_format?: string | null
+          updated_at?: string | null
           user_id?: string
         }
         Relationships: []

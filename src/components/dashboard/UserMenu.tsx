@@ -19,6 +19,7 @@ interface UserMenuProps {
   user: {
     name?: string;
     email: string;
+    avatar_url?: string;
   } | null;
 }
 
@@ -57,6 +58,9 @@ export const UserMenu: React.FC<UserMenuProps> = ({ user }) => {
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" className="relative h-8 w-8 rounded-full">
           <Avatar className="h-8 w-8 border">
+            {user?.avatar_url ? (
+              <AvatarImage src={user.avatar_url} alt={user?.name || 'Avatar do usuário'} />
+            ) : null}
             <AvatarFallback>{getInitials()}</AvatarFallback>
           </Avatar>
         </Button>

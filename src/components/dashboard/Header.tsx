@@ -30,7 +30,7 @@ export const Header: React.FC<HeaderProps> = ({ onMobileMenuToggle, isMobileMenu
         
         const { data, error } = await supabase
           .from('profiles')
-          .select('name, email')
+          .select('name, email, avatar_url')
           .eq('id', session.user.id)
           .single();
         

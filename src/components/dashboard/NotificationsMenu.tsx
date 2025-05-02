@@ -21,7 +21,7 @@ interface Notification {
   user_id: string;
   message: string;
   type: string;
-  related_id?: string;
+  related_id?: string | null;
   is_read: boolean;
   created_at: string;
 }
@@ -42,8 +42,8 @@ export const NotificationsMenu: React.FC = () => {
 
       const userId = session.session.user.id;
 
-      const { data, error } = await supabase
-        .from('notifications')
+      // Use the notifications table that we've created
+      const { data, error } = await supabase.from('notifications')
         .select('*')
         .eq('user_id', userId)
         .order('created_at', { ascending: false })
@@ -51,8 +51,9 @@ export const NotificationsMenu: React.FC = () => {
 
       if (error) throw error;
 
-      setNotifications(data || []);
-      setUnreadCount(data?.filter(n => !n.is_read).length || 0);
+      // Set notifications with proper typing
+      setNotifications(data as Notification[] || []);
+      setUnreadCount((data as Notification[] || []).filter(n => !n.is_read).length || 0);
     } catch (error) {
       console.error('Erro ao carregar notificações:', error);
     } finally {
@@ -63,7 +64,7 @@ export const NotificationsMenu: React.FC = () => {
   useEffect(() => {
     fetchNotifications();
 
-    // Configurar canal de tempo real para notificações
+    // Configure real-time channel for notifications
     const channel = supabase
       .channel('notifications-changes')
       .on('postgres_changes', 
@@ -93,7 +94,7 @@ export const NotificationsMenu: React.FC = () => {
 
       if (error) throw error;
       
-      // Atualizar estado local
+      // Update local state
       setNotifications(prev => 
         prev.map(n => n.id === notificationId ? { ...n, is_read: true } : n)
       );
