@@ -1,245 +1,290 @@
 
 import React, { useState, useEffect } from 'react';
-import { Bell } from 'lucide-react';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
 import { Button } from '@/components/ui/button';
-import { 
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-  DropdownMenuSeparator,
-  DropdownMenuLabel
-} from '@/components/ui/dropdown-menu';
-import { Badge } from '@/components/ui/badge';
+import { Bell } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { Separator } from '@/components/ui/separator';
+import { markAllNotificationsAsRead, clearReadNotifications } from '@/utils/notificationUtils';
 import { toast } from 'sonner';
 
 interface Notification {
   id: string;
   user_id: string;
   message: string;
-  type: string;
-  related_id?: string | null;
+  type: 'system' | 'appointment' | 'message';
+  related_id: string | null;
   is_read: boolean;
   created_at: string;
 }
 
-export const NotificationsMenu: React.FC = () => {
+export const NotificationsMenu = () => {
   const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
-
-  const fetchNotifications = async () => {
-    setLoading(true);
-    try {
-      const { data: session } = await supabase.auth.getSession();
-      if (!session?.session?.user) {
-        setLoading(false);
-        return;
-      }
-
-      const userId = session.session.user.id;
-
-      // Use the notifications table that we've created
-      const { data, error } = await supabase.from('notifications')
-        .select('*')
-        .eq('user_id', userId)
-        .order('created_at', { ascending: false })
-        .limit(10);
-
-      if (error) throw error;
-
-      // Set notifications with proper typing
-      setNotifications(data as Notification[] || []);
-      setUnreadCount((data as Notification[] || []).filter(n => !n.is_read).length || 0);
-    } catch (error) {
-      console.error('Erro ao carregar notificações:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const [userId, setUserId] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchNotifications();
-
-    // Configure real-time channel for notifications
-    const channel = supabase
-      .channel('notifications-changes')
-      .on('postgres_changes', 
-        { 
-          event: '*', 
-          schema: 'public', 
-          table: 'notifications' 
-        }, 
-        (payload) => {
-          console.log('Notificação em tempo real:', payload);
-          fetchNotifications();
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
+    const fetchUserIdAndNotifications = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.user) return;
+        
+        setUserId(session.user.id);
+        fetchNotifications(session.user.id);
+      } catch (error) {
+        console.error('Error fetching user session:', error);
+      }
     };
+
+    fetchUserIdAndNotifications();
+
+    // Set up subscription for real-time notifications
+    const setupSubscription = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.user) return;
+
+        const channel = supabase
+          .channel('notifications-changes')
+          .on(
+            'postgres_changes',
+            {
+              event: 'INSERT',
+              schema: 'public',
+              table: 'notifications',
+              filter: `user_id=eq.${session.user.id}`,
+            },
+            (payload) => {
+              // Add new notification to state
+              const newNotification = payload.new as Notification;
+              setNotifications(prev => [newNotification, ...prev]);
+              setUnreadCount(prev => prev + 1);
+              
+              // Show toast for new notification
+              toast.info(newNotification.message, {
+                description: 'Nova notificação',
+                duration: 3000,
+              });
+            }
+          )
+          .subscribe();
+
+        return () => {
+          supabase.removeChannel(channel);
+        };
+      } catch (error) {
+        console.error('Error setting up notification subscription:', error);
+      }
+    };
+
+    setupSubscription();
   }, []);
 
-  const markAsRead = async (notificationId: string) => {
+  const fetchNotifications = async (uid: string) => {
+    setIsLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('notifications')
+        .select('*')
+        .eq('user_id', uid)
+        .order('created_at', { ascending: false })
+        .limit(50);
+      
+      if (error) throw error;
+      
+      // Type assertion to ensure we're working with Notification[]
+      const typedNotifications = data as Notification[];
+      setNotifications(typedNotifications);
+      
+      // Count unread notifications
+      setUnreadCount(typedNotifications.filter(n => !n.is_read).length);
+      
+    } catch (error) {
+      console.error('Error fetching notifications:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+  
+  const handleMarkAsRead = async (notificationId: string) => {
     try {
       const { error } = await supabase
         .from('notifications')
         .update({ is_read: true })
         .eq('id', notificationId);
-
+      
       if (error) throw error;
       
       // Update local state
       setNotifications(prev => 
-        prev.map(n => n.id === notificationId ? { ...n, is_read: true } : n)
+        prev.map(n => 
+          n.id === notificationId ? { ...n, is_read: true } : n
+        )
       );
       setUnreadCount(prev => Math.max(0, prev - 1));
-
+      
     } catch (error) {
-      console.error('Erro ao marcar notificação como lida:', error);
+      console.error('Error marking notification as read:', error);
     }
   };
-
-  const markAllAsRead = async () => {
+  
+  const handleMarkAllAsRead = async () => {
+    if (!userId) return;
+    
     try {
-      const { data: session } = await supabase.auth.getSession();
-      if (!session?.session?.user) return;
-
-      const { error } = await supabase
-        .from('notifications')
-        .update({ is_read: true })
-        .eq('user_id', session.session.user.id)
-        .eq('is_read', false);
-
-      if (error) throw error;
+      const success = await markAllNotificationsAsRead(userId);
       
-      setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
-      setUnreadCount(0);
-      toast.success('Todas as notificações foram marcadas como lidas');
-
+      if (success) {
+        // Update local state
+        setNotifications(prev => 
+          prev.map(n => ({ ...n, is_read: true }))
+        );
+        setUnreadCount(0);
+        toast.success('Todas as notificações foram marcadas como lidas');
+      }
     } catch (error) {
-      console.error('Erro ao marcar todas como lidas:', error);
+      console.error('Error marking all notifications as read:', error);
       toast.error('Erro ao marcar notificações como lidas');
     }
   };
-
-  const clearAllNotifications = async () => {
+  
+  const handleClearRead = async () => {
+    if (!userId) return;
+    
     try {
-      const { data: session } = await supabase.auth.getSession();
-      if (!session?.session?.user) return;
-
-      const { error } = await supabase
-        .from('notifications')
-        .delete()
-        .eq('user_id', session.session.user.id);
-
-      if (error) throw error;
+      const success = await clearReadNotifications(userId);
       
-      setNotifications([]);
-      setUnreadCount(0);
-      toast.success('Todas as notificações foram apagadas');
-
+      if (success) {
+        // Update local state - remove all read notifications
+        setNotifications(prev => prev.filter(n => !n.is_read));
+        toast.success('Notificações lidas foram removidas');
+      }
     } catch (error) {
-      console.error('Erro ao apagar notificações:', error);
-      toast.error('Erro ao apagar notificações');
+      console.error('Error clearing read notifications:', error);
+      toast.error('Erro ao limpar notificações');
     }
   };
-
+  
+  const formatNotificationTime = (dateString: string) => {
+    const date = parseISO(dateString);
+    const now = new Date();
+    const diffInHours = (now.getTime() - date.getTime()) / (1000 * 60 * 60);
+    
+    if (diffInHours < 24) {
+      return format(date, "HH:mm", { locale: ptBR });
+    } else if (diffInHours < 48) {
+      return 'Ontem';
+    } else {
+      return format(date, "dd/MM/yyyy", { locale: ptBR });
+    }
+  };
+  
   const getNotificationIcon = (type: string) => {
     switch(type) {
       case 'appointment':
-        return '📅';
+        return <div className="h-2 w-2 rounded-full bg-blue-500"></div>;
       case 'message':
-        return '💬';
-      case 'system':
-        return '🔔';
+        return <div className="h-2 w-2 rounded-full bg-green-500"></div>;
       default:
-        return '📌';
+        return <div className="h-2 w-2 rounded-full bg-orange-500"></div>;
     }
   };
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
+    <Popover>
+      <PopoverTrigger asChild>
         <Button variant="ghost" size="icon" className="relative">
           <Bell className="h-5 w-5" />
           {unreadCount > 0 && (
-            <Badge 
-              className="absolute -top-1 -right-1 bg-red-500 text-white text-xs min-w-[1.25rem] h-5 flex items-center justify-center"
-            >
-              {unreadCount}
-            </Badge>
+            <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-xs text-white">
+              {unreadCount > 9 ? '9+' : unreadCount}
+            </span>
           )}
         </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-80">
-        <DropdownMenuLabel className="flex justify-between items-center">
-          <span>Notificações</span>
-          <div className="flex gap-1">
+      </PopoverTrigger>
+      <PopoverContent className="w-[350px] p-0" align="end">
+        <div className="flex items-center justify-between p-4 bg-muted/50">
+          <h3 className="font-medium">Notificações</h3>
+          <div className="flex gap-2">
+            {unreadCount > 0 && (
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                className="text-xs h-7"
+                onClick={handleMarkAllAsRead}
+              >
+                Marcar tudo como lido
+              </Button>
+            )}
             <Button 
               variant="ghost" 
               size="sm" 
-              disabled={unreadCount === 0}
-              onClick={markAllAsRead}
-              className="text-xs"
+              className="text-xs h-7"
+              onClick={handleClearRead}
             >
-              Marcar todas como lidas
-            </Button>
-            <Button 
-              variant="ghost" 
-              size="sm" 
-              disabled={notifications.length === 0}
-              onClick={clearAllNotifications}
-              className="text-xs"
-            >
-              Limpar
+              Limpar lidas
             </Button>
           </div>
-        </DropdownMenuLabel>
-        <DropdownMenuSeparator />
+        </div>
         
-        {loading ? (
-          <div className="p-4 text-center text-sm text-gray-500">
-            Carregando notificações...
-          </div>
-        ) : notifications.length > 0 ? (
-          notifications.map((notification) => (
-            <DropdownMenuItem
-              key={notification.id}
-              className={`py-2 px-4 ${!notification.is_read ? 'bg-blue-50' : ''}`}
-              onClick={() => markAsRead(notification.id)}
-            >
-              <div className="flex gap-3 items-start w-full">
-                <div className="text-xl">
+        <Separator />
+        
+        <div className="max-h-[300px] overflow-y-auto">
+          {isLoading ? (
+            <div className="py-8 text-center text-muted-foreground">
+              Carregando notificações...
+            </div>
+          ) : notifications.length === 0 ? (
+            <div className="py-8 text-center text-muted-foreground">
+              Nenhuma notificação.
+            </div>
+          ) : (
+            notifications.map(notification => (
+              <div 
+                key={notification.id}
+                className={`p-3 hover:bg-muted/50 cursor-pointer flex items-start gap-2 ${
+                  !notification.is_read ? 'bg-blue-50/50' : ''
+                }`}
+                onClick={() => {
+                  if (!notification.is_read) {
+                    handleMarkAsRead(notification.id);
+                  }
+                }}
+              >
+                <div className="mt-1.5">
                   {getNotificationIcon(notification.type)}
                 </div>
-                <div className="flex-1 space-y-1">
-                  <p className={`text-sm ${!notification.is_read ? 'font-medium' : ''}`}>
-                    {notification.message}
-                  </p>
-                  <p className="text-xs text-gray-500">
-                    {format(parseISO(notification.created_at), "dd 'de' MMM, HH:mm", {
-                      locale: ptBR
-                    })}
-                  </p>
+                
+                <div className="flex-1">
+                  <p className="text-sm">{notification.message}</p>
+                  <span className="text-xs text-muted-foreground">
+                    {formatNotificationTime(notification.created_at)}
+                  </span>
                 </div>
+                
                 {!notification.is_read && (
-                  <div className="h-2 w-2 bg-blue-500 rounded-full mt-1"></div>
+                  <div className="h-2 w-2 rounded-full bg-primary mt-1.5"></div>
                 )}
               </div>
-            </DropdownMenuItem>
-          ))
-        ) : (
-          <div className="p-4 text-center text-sm text-gray-500">
-            Você não tem novas notificações
-          </div>
-        )}
-      </DropdownMenuContent>
-    </DropdownMenu>
+            ))
+          )}
+        </div>
+        
+        <Separator />
+        
+        <div className="p-2 text-center">
+          <Button variant="link" size="sm" className="text-xs h-auto">
+            Ver todas as notificações
+          </Button>
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 };

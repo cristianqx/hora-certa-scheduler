@@ -88,3 +88,71 @@ export const createAdminNotification = async (message: string, relatedId?: strin
     return false;
   }
 };
+
+/**
+ * Mark a notification as read
+ */
+export const markNotificationAsRead = async (notificationId: string) => {
+  try {
+    const { error } = await supabase
+      .from('notifications')
+      .update({ is_read: true })
+      .eq('id', notificationId);
+
+    if (error) {
+      console.error('Error marking notification as read:', error);
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    console.error('Error marking notification as read:', error);
+    return false;
+  }
+};
+
+/**
+ * Mark all user notifications as read
+ */
+export const markAllNotificationsAsRead = async (userId: string) => {
+  try {
+    const { error } = await supabase
+      .from('notifications')
+      .update({ is_read: true })
+      .eq('user_id', userId)
+      .eq('is_read', false);
+    
+    if (error) {
+      console.error('Error marking all notifications as read:', error);
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    console.error('Error marking all notifications as read:', error);
+    return false;
+  }
+};
+
+/**
+ * Delete all read notifications for a user
+ */
+export const clearReadNotifications = async (userId: string) => {
+  try {
+    const { error } = await supabase
+      .from('notifications')
+      .delete()
+      .eq('user_id', userId)
+      .eq('is_read', true);
+    
+    if (error) {
+      console.error('Error clearing read notifications:', error);
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    console.error('Error clearing read notifications:', error);
+    return false;
+  }
+};

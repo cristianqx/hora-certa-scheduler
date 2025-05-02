@@ -14,6 +14,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { CalendarClock, User, Mail, Clock, Calendar as CalendarIcon, DollarSign, ClipboardList, ArrowLeft, ArrowRight } from 'lucide-react';
 import { toast } from 'sonner';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { createNotification } from '@/utils/notificationUtils';
 
 interface Appointment {
   id: string;
@@ -135,6 +136,17 @@ const AppointmentsPage = () => {
         });
       }
       
+      // Create notification for status update
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        await createNotification({
+          userId: session.user.id,
+          message: `Status do agendamento atualizado para ${newStatus === 'confirmed' ? 'confirmado' : newStatus === 'canceled' ? 'cancelado' : 'pendente'}`,
+          type: 'appointment',
+          relatedId: appointmentId
+        });
+      }
+      
       toast.success('Status atualizado com sucesso');
     } catch (error) {
       console.error('Error updating appointment status:', error);
@@ -171,37 +183,56 @@ const AppointmentsPage = () => {
   const currentMonth = format(calendarView, 'MMMM yyyy', { locale: ptBR });
   const startDate = startOfMonth(calendarView);
   const endDate = endOfMonth(calendarView);
-  const daysInMonth = eachDayOfInterval({ start: startDate, end: endDate });
   
-  // Função segura para calcular semanas do mês
-  const getWeeksOfMonth = (days: Date[]) => {
-    if (!days.length) return [];
-    
-    const weeksNeeded = Math.ceil(days.length / 7);
-    if (isNaN(weeksNeeded) || weeksNeeded <= 0 || weeksNeeded > 6) {
-      console.error('Cálculo inválido de semanas:', { days: days.length, weeksNeeded });
-      return []; // Retornar array vazio em vez de tentar criar um com tamanho inválido
+  // Fixed function to safely get days in month and create weeks
+  const getWeeksOfMonth = (start: Date, end: Date) => {
+    try {
+      // Safely get days in the interval
+      const daysInMonth = eachDayOfInterval({ start, end });
+      
+      if (!daysInMonth || !Array.isArray(daysInMonth) || daysInMonth.length === 0) {
+        console.error('Invalid days in month array', { start, end });
+        return []; // Return empty array if no valid days
+      }
+      
+      // Calculate how many weeks we need (safely)
+      const weeksNeeded = Math.ceil(daysInMonth.length / 7);
+      
+      // Validate weeks calculation
+      if (!Number.isInteger(weeksNeeded) || weeksNeeded <= 0 || weeksNeeded > 6) {
+        console.error('Invalid weeks calculation', { daysInMonth: daysInMonth.length, weeksNeeded });
+        return [];
+      }
+      
+      // Create array of weeks with valid length
+      return Array.from({ length: weeksNeeded }).map((_, weekIdx) => {
+        const weekStart = weekIdx * 7;
+        const daysInWeek = daysInMonth.slice(weekStart, weekStart + 7);
+        
+        // Get first day of week (0 = Sunday, 1 = Monday, etc.)
+        const firstDayOfWeek = daysInWeek[0]?.getDay() || 0;
+        
+        // Create array for empty cells before first day of month
+        const emptyCellsBefore = Array.from({ length: firstDayOfWeek }).map(() => null);
+        
+        // Combine empty cells with days
+        const filledCells = [...emptyCellsBefore, ...daysInWeek];
+        
+        // Calculate cells needed after last day to fill week
+        const remainingCells = 7 - filledCells.length;
+        const emptyCellsAfter = remainingCells > 0 ? 
+          Array.from({ length: remainingCells }).map(() => null) : [];
+        
+        return [...filledCells, ...emptyCellsAfter];
+      });
+    } catch (error) {
+      console.error('Error generating calendar weeks:', error);
+      return []; // Return empty array on error
     }
-    
-    return Array.from({ length: weeksNeeded }, (_, weekIdx) => {
-      const weekStart = weekIdx * 7;
-      const daysInWeek = days.slice(weekStart, weekStart + 7);
-      
-      // Adicionar células vazias para os dias antes do primeiro dia do mês
-      const firstDayOfWeek = daysInWeek[0]?.getDay() || 0;
-      const emptyCellsBefore = Array(firstDayOfWeek).fill(null);
-      
-      // Combinar células vazias com dias do mês
-      const filledCells = [...emptyCellsBefore, ...daysInWeek];
-      
-      // Adicionar células vazias para os dias após o último dia do mês
-      const emptyCellsAfter = Array(7 - filledCells.length).fill(null);
-      
-      return [...filledCells, ...emptyCellsAfter];
-    });
   };
   
-  const weeksOfMonth = getWeeksOfMonth(daysInMonth);
+  // Safely generate weeks
+  const weeksOfMonth = getWeeksOfMonth(startDate, endDate);
   
   return (
     <div className="space-y-6">
@@ -318,76 +349,82 @@ const AppointmentsPage = () => {
               </div>
             </CardHeader>
             <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="text-center">Domingo</TableHead>
-                    <TableHead className="text-center">Segunda</TableHead>
-                    <TableHead className="text-center">Terça</TableHead>
-                    <TableHead className="text-center">Quarta</TableHead>
-                    <TableHead className="text-center">Quinta</TableHead>
-                    <TableHead className="text-center">Sexta</TableHead>
-                    <TableHead className="text-center">Sábado</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {weeksOfMonth.map((week, weekIdx) => (
-                    <TableRow key={`week-${weekIdx}`}>
-                      {week.map((day, dayIdx) => {
-                        if (!day) {
-                          return <TableCell key={`empty-${weekIdx}-${dayIdx}`} className="h-24"></TableCell>;
-                        }
-                        
-                        const isToday = isSameDay(day, new Date());
-                        const isSelected = isSameDay(day, selectedDate);
-                        const dayAppointments = getDayAppointments(day);
-                        const hasAppointments = dayAppointments.length > 0;
-                        
-                        return (
-                          <TableCell 
-                            key={`day-${format(day, 'yyyy-MM-dd')}`}
-                            className={`h-24 align-top p-1 border ${
-                              isToday ? 'bg-primary-50' : ''
-                            } ${
-                              isSelected ? 'ring-2 ring-primary' : ''
-                            } hover:bg-gray-50 cursor-pointer`}
-                            onClick={() => handleDateChange(day)}
-                          >
-                            <div className="flex flex-col h-full">
-                              <div className={`p-1 text-right ${
-                                isToday ? 'font-bold' : ''
-                              } text-sm`}>
-                                {format(day, 'd')}
-                              </div>
-                              
-                              <div className="flex-1 overflow-y-auto max-h-20 space-y-1">
-                                {hasAppointments ? (
-                                  dayAppointments.map(app => (
-                                    <div 
-                                      key={app.id}
-                                      className={`px-2 py-1 text-xs rounded truncate ${
-                                        app.status === 'canceled' ? 'bg-red-100 text-red-800' :
-                                        app.status === 'confirmed' ? 'bg-green-100 text-green-800' :
-                                        'bg-yellow-100 text-yellow-800'
-                                      }`}
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleAppointmentClick(app);
-                                      }}
-                                    >
-                                      {format(parseISO(app.start_time), 'HH:mm')} - {app.client_name.split(' ')[0]}
-                                    </div>
-                                  ))
-                                ) : null}
-                              </div>
-                            </div>
-                          </TableCell>
-                        );
-                      })}
+              {weeksOfMonth.length > 0 ? (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="text-center">Domingo</TableHead>
+                      <TableHead className="text-center">Segunda</TableHead>
+                      <TableHead className="text-center">Terça</TableHead>
+                      <TableHead className="text-center">Quarta</TableHead>
+                      <TableHead className="text-center">Quinta</TableHead>
+                      <TableHead className="text-center">Sexta</TableHead>
+                      <TableHead className="text-center">Sábado</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {weeksOfMonth.map((week, weekIdx) => (
+                      <TableRow key={`week-${weekIdx}`}>
+                        {week.map((day, dayIdx) => {
+                          if (!day) {
+                            return <TableCell key={`empty-${weekIdx}-${dayIdx}`} className="h-24"></TableCell>;
+                          }
+                          
+                          const isToday = isSameDay(day, new Date());
+                          const isSelected = isSameDay(day, selectedDate);
+                          const dayAppointments = getDayAppointments(day);
+                          const hasAppointments = dayAppointments.length > 0;
+                          
+                          return (
+                            <TableCell 
+                              key={`day-${format(day, 'yyyy-MM-dd')}`}
+                              className={`h-24 align-top p-1 border ${
+                                isToday ? 'bg-primary-50' : ''
+                              } ${
+                                isSelected ? 'ring-2 ring-primary' : ''
+                              } hover:bg-gray-50 cursor-pointer`}
+                              onClick={() => handleDateChange(day)}
+                            >
+                              <div className="flex flex-col h-full">
+                                <div className={`p-1 text-right ${
+                                  isToday ? 'font-bold' : ''
+                                } text-sm`}>
+                                  {format(day, 'd')}
+                                </div>
+                                
+                                <div className="flex-1 overflow-y-auto max-h-20 space-y-1">
+                                  {hasAppointments ? (
+                                    dayAppointments.map(app => (
+                                      <div 
+                                        key={app.id}
+                                        className={`px-2 py-1 text-xs rounded truncate ${
+                                          app.status === 'canceled' ? 'bg-red-100 text-red-800' :
+                                          app.status === 'confirmed' ? 'bg-green-100 text-green-800' :
+                                          'bg-yellow-100 text-yellow-800'
+                                        }`}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleAppointmentClick(app);
+                                        }}
+                                      >
+                                        {format(parseISO(app.start_time), 'HH:mm')} - {app.client_name.split(' ')[0]}
+                                      </div>
+                                    ))
+                                  ) : null}
+                                </div>
+                              </div>
+                            </TableCell>
+                          );
+                        })}
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              ) : (
+                <div className="text-center py-8 text-gray-500">
+                  Erro ao gerar o calendário. Por favor, atualize a página.
+                </div>
+              )}
               
               <div className="mt-4 flex flex-wrap gap-2">
                 <div className="flex items-center gap-2">
