@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
@@ -19,6 +18,34 @@ import {
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 import { useNavigate } from 'react-router-dom';
+import { Copy, Check } from 'lucide-react';
+
+// Lista de timezones brasileiros
+const timezones = [
+  { value: 'America/Sao_Paulo', label: 'Brasília, SP, RJ, MG, PR, SC, RS, GO, DF, ES, BA, TO' },
+  { value: 'America/Fortaleza', label: 'CE, MA, PB, PI, RN, AL, SE' },
+  { value: 'America/Recife', label: 'Pernambuco' },
+  { value: 'America/Belem', label: 'Pará, Amapá' },
+  { value: 'America/Manaus', label: 'Amazonas' },
+  { value: 'America/Cuiaba', label: 'Mato Grosso, Mato Grosso do Sul' },
+  { value: 'America/Porto_Velho', label: 'Rondônia' },
+  { value: 'America/Boa_Vista', label: 'Roraima' },
+  { value: 'America/Noronha', label: 'Fernando de Noronha' },
+];
+
+interface Profile {
+  id: string;
+  name: string;
+  email: string;
+  profession: string | null;
+  bio: string | null;
+  website: string | null;
+  avatar_url: string | null;
+  created_at: string;
+  updated_at: string;
+  slug: string | null;
+  timezone?: string | null;
+}
 
 const profileSchema = z.object({
   name: z.string().min(2, 'Nome deve ter pelo menos 2 caracteres'),
@@ -26,14 +53,19 @@ const profileSchema = z.object({
   profession: z.string().optional(),
   bio: z.string().max(500, 'A bio deve ter no máximo 500 caracteres').optional(),
   website: z.string().url('URL inválida').optional().or(z.literal('')),
+  timezone: z.string().optional(),
 });
 
 type ProfileFormValues = z.infer<typeof profileSchema>;
+
+type ProfileUpdateData = Partial<Pick<Profile, 'name' | 'profession' | 'bio' | 'website' | 'slug' | 'timezone'>>;
 
 const ProfilePage: React.FC = () => {
   const navigate = useNavigate();
   const [isLoading, setIsLoading] = useState(true);
   const [user, setUser] = useState<any>(null);
+  const [bookingUrl, setBookingUrl] = useState('');
+  const [copied, setCopied] = useState(false);
 
   const form = useForm<ProfileFormValues>({
     resolver: zodResolver(profileSchema),
@@ -43,8 +75,35 @@ const ProfilePage: React.FC = () => {
       profession: '',
       bio: '',
       website: '',
+      timezone: 'America/Sao_Paulo',
     },
   });
+
+  const generateSlug = (name: string): string => {
+    const slug = name
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '') // Remove acentos
+      .replace(/[^a-z0-9\s-]/g, '') // Remove caracteres especiais
+      .trim() // Remove espaços no início e fim
+      .replace(/\s+/g, '-') // Substitui espaços por hífen
+      .replace(/-+/g, '-'); // Remove múltiplos hífens
+    
+    console.log('Nome original:', name);
+    console.log('Slug gerado:', slug);
+    return slug;
+  };
+
+  const copyToClipboard = async () => {
+    try {
+      await navigator.clipboard.writeText(bookingUrl);
+      setCopied(true);
+      toast.success('Link copiado para a área de transferência!');
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      toast.error('Erro ao copiar link');
+    }
+  };
 
   useEffect(() => {
     const checkUser = async () => {
@@ -59,7 +118,7 @@ const ProfilePage: React.FC = () => {
         .from('profiles')
         .select('*')
         .eq('id', session.user.id)
-        .single();
+        .single() as { data: Profile | null, error: any };
 
       if (error) {
         console.error('Error fetching profile:', error);
@@ -75,9 +134,29 @@ const ProfilePage: React.FC = () => {
           profession: profile.profession || '',
           bio: profile.bio || '',
           website: profile.website || '',
+          timezone: profile.timezone || 'America/Sao_Paulo',
         });
 
         setUser(session.user);
+        
+        // Atualiza o URL de agendamento usando a porta correta
+        const baseUrl = 'http://localhost:8080';
+        
+        // Se não tiver slug, gera um novo
+        if (!profile.slug) {
+          const newSlug = generateSlug(profile.name);
+          // @ts-ignore - Temporário: o campo slug existe na tabela mas não está na tipagem do Supabase
+          const { error: updateError } = await supabase
+            .from('profiles')
+            .update({ slug: newSlug } as any)
+            .eq('id', profile.id);
+            
+          if (!updateError) {
+            setBookingUrl(`${baseUrl}/booking/${newSlug}`);
+          }
+        } else {
+          setBookingUrl(`${baseUrl}/booking/${profile.slug}`);
+        }
       }
       
       setIsLoading(false);
@@ -95,19 +174,33 @@ const ProfilePage: React.FC = () => {
         return;
       }
 
-      const { error } = await supabase
+      const slug = generateSlug(values.name);
+      console.log('Salvando perfil com slug:', slug);
+
+      const { data, error } = await supabase
         .from('profiles')
         .update({
           name: values.name,
           profession: values.profession,
           bio: values.bio,
           website: values.website,
+          slug: slug,
+          timezone: values.timezone || 'America/Sao_Paulo',
         })
-        .eq('id', user.id);
+        .eq('id', user.id)
+        .select();
 
-      if (error) throw error;
+      if (error) {
+        console.error('Erro ao atualizar perfil:', error);
+        throw error;
+      }
 
+      console.log('Perfil atualizado com sucesso:', data);
       toast.success('Perfil atualizado com sucesso!');
+
+      // Atualiza o URL de agendamento
+      const baseUrl = 'http://localhost:8080';
+      setBookingUrl(`${baseUrl}/booking/${slug}`);
     } catch (error: any) {
       console.error('Error updating profile:', error);
       toast.error(error.message || 'Erro ao atualizar perfil');
@@ -241,6 +334,53 @@ const ProfilePage: React.FC = () => {
                     </FormItem>
                   )}
                 />
+
+                <FormField
+                  control={form.control}
+                  name="timezone"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Fuso Horário</FormLabel>
+                      <FormControl>
+                        <select {...field} className="input w-full border rounded p-2">
+                          {timezones.map((tz) => (
+                            <option key={tz.value} value={tz.value}>{tz.label} ({tz.value})</option>
+                          ))}
+                        </select>
+                      </FormControl>
+                      <FormDescription>
+                        Escolha o fuso horário da sua região. Se não souber, mantenha o padrão (Brasília).
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <div className="space-y-2">
+                  <FormLabel>Link de Agendamento</FormLabel>
+                  <div className="flex gap-2">
+                    <Input
+                      value={bookingUrl}
+                      readOnly
+                      className="bg-muted"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      onClick={copyToClipboard}
+                    >
+                      {copied ? (
+                        <Check className="h-4 w-4 text-green-500" />
+                      ) : (
+                        <Copy className="h-4 w-4" />
+                      )}
+                    </Button>
+                  </div>
+                  <FormDescription>
+                    Este é o link que seus clientes usarão para agendar horários com você.
+                  </FormDescription>
+                </div>
 
                 <Button type="submit" disabled={isLoading}>
                   {isLoading ? 'Salvando...' : 'Salvar Alterações'}

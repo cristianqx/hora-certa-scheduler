@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { format, parseISO, addMinutes } from 'date-fns';
@@ -18,6 +17,48 @@ import { cn } from '@/lib/utils';
 import { z } from 'zod';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+
+// Tipos simplificados para evitar problemas de profundidade
+interface Service {
+  id: string;
+  name: string;
+  description: string | null;
+  duration: number;
+  price: string | null;
+  active: boolean;
+  user_id: string;
+}
+
+interface Appointment {
+  id: string;
+  provider_id: string;
+  service_id: string;
+  client_name: string;
+  client_email: string;
+  start_time: string;
+  end_time: string;
+  notes: string | null;
+  status: string;
+}
+
+interface BlockedTime {
+  id: string;
+  user_id: string;
+  date: string | null;
+  start_time: string;
+  end_time: string;
+  all_day: boolean;
+  recurring: boolean;
+}
+
+interface Profile {
+  id: string;
+  name: string;
+  profession: string | null;
+  bio: string | null;
+  slug: string;
+  timezone: string | null;
+}
 
 // Máscara para telefone brasileiro
 const applyPhoneMask = (value: string) => {
@@ -39,29 +80,25 @@ const validationSchema = z.object({
   notes: z.string().max(300, 'As observações devem ter no máximo 300 caracteres').optional(),
 });
 
-interface Service {
-  id: string;
-  name: string;
-  description: string | null;
-  duration: number;
-  price: string | null;
-}
+// Função utilitária para exibir horário no fuso do profissional
+const formatTimeWithTZ = (date: Date, timeZone: string = 'America/Sao_Paulo') => {
+  return date.toLocaleTimeString('pt-BR', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+    timeZone
+  });
+};
 
-interface BlockedTime {
-  id: string;
-  date: string | null;
-  start_time: string;
-  end_time: string;
-  all_day: boolean;
-  recurring: boolean;
-}
-
-interface Appointment {
-  id: string;
-  start_time: string;
-  end_time: string;
-  service_id: string;
-}
+const formatDateWithTZ = (date: Date, timeZone: string = 'America/Sao_Paulo') => {
+  return date.toLocaleDateString('pt-BR', {
+    weekday: 'long',
+    day: '2-digit',
+    month: 'long',
+    year: 'numeric',
+    timeZone
+  });
+};
 
 const PublicBookingPage: React.FC = () => {
   const { username } = useParams<{ username: string }>();
@@ -85,6 +122,7 @@ const PublicBookingPage: React.FC = () => {
   const [existingAppointments, setExistingAppointments] = useState<Appointment[]>([]);
   const [blockedTimes, setBlockedTimes] = useState<BlockedTime[]>([]);
   const [blockedDates, setBlockedDates] = useState<Date[]>([]);
+  const [profileTimezone, setProfileTimezone] = useState<string>('America/Sao_Paulo');
 
   useEffect(() => {
     const checkAuthAndFetchData = async () => {
@@ -103,97 +141,106 @@ const PublicBookingPage: React.FC = () => {
         console.error('Erro ao verificar autenticação:', error);
       }
       
-      await fetchProfileAndServices();
+      await fetchProfileAndServices(username);
     };
     
     checkAuthAndFetchData();
   }, [username, navigate]);
 
-  const fetchProfileAndServices = async () => {
-    if (!username) return;
-    
-    setIsLoading(true);
+  const fetchProfileAndServices = async (username: string) => {
     try {
-      // Buscar o perfil com base no username
-      // Em uma implementação real, você teria uma tabela para mapear usernames para IDs
-      // Aqui estamos simulando com o slug criado a partir do nome
-      const { data: profiles, error: profileError } = await supabase
-        .from('profiles')
-        .select('id, name');
+      console.log('Buscando perfil com slug:', username);
       
+      // @ts-ignore - Erro de tipagem do Supabase
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('id, name, profession, bio, slug, timezone')
+        .eq('slug', username)
+        .single();
+
+      console.log('Resultado da busca:', { profile, error: profileError });
+
       if (profileError) {
-        throw profileError;
+        console.error('Erro ao carregar informações:', profileError);
+        toast.error('Profissional não encontrado');
+        return;
       }
 
-      // Encontrar o perfil que corresponde ao username (slug)
-      const matchedProfile = profiles?.find(profile => {
-        const slug = profile.name
-          .toLowerCase()
-          .normalize('NFD')
-          .replace(/[\u0300-\u036f]/g, '')
-          .replace(/[^\w\s]/gi, '')
-          .replace(/\s+/g, '-');
-        return slug === username;
+      if (!profile) {
+        console.log('Perfil não encontrado');
+        toast.error('Profissional não encontrado');
+        return;
+      }
+
+      console.log('Perfil encontrado:', profile);
+      // @ts-ignore - Erro de tipagem do Supabase
+      setProfileName(profile.name);
+      // @ts-ignore - Erro de tipagem do Supabase
+      setProviderId(profile.id);
+      // @ts-ignore
+      if (profile && profile.timezone) {
+        // @ts-ignore
+        setProfileTimezone(profile.timezone);
+      }
+      
+      // Buscar serviços ativos
+      const { data: servicesData, error: servicesError } = await supabase
+        .from('services')
+        .select('*')
+        // @ts-ignore - Erro de tipagem do Supabase
+        .eq('user_id', profile.id)
+        .eq('active', true)
+        .order('name');
+
+      if (servicesError) {
+        console.error('Erro ao carregar serviços:', servicesError);
+        toast.error('Erro ao carregar serviços');
+        return;
+      }
+      
+      setServices(servicesData || []);
+      if (servicesData && servicesData.length > 0) {
+        setSelectedService(servicesData[0]);
+      }
+      
+      // Buscar bloqueios de datas
+      const { data: blockedData, error: blockedError } = await supabase
+        .from('blocked_times')
+        .select('*')
+        // @ts-ignore - Erro de tipagem do Supabase
+        .eq('user_id', profile.id);
+        
+      if (blockedError) {
+        throw blockedError;
+      }
+      
+      setBlockedTimes(blockedData || []);
+      
+      // Criar lista de datas bloqueadas para o calendário
+      const blockedDatesArray: Date[] = [];
+      blockedData?.forEach(block => {
+        if (block.date && block.all_day) {
+          blockedDatesArray.push(new Date(block.date));
+        }
       });
-
-      if (matchedProfile) {
-        setProfileName(matchedProfile.name);
-        setProviderId(matchedProfile.id);
+      setBlockedDates(blockedDatesArray);
+      
+      // Buscar agendamentos existentes
+      const { data: appointmentsData, error: appointmentsError } = await supabase
+        .from('appointments')
+        .select('*')
+        // @ts-ignore - Erro de tipagem do Supabase
+        .eq('provider_id', profile.id);
         
-        // Buscar serviços deste profissional
-        const { data: servicesData, error: servicesError } = await supabase
-          .from('services')
-          .select('*')
-          .eq('user_id', matchedProfile.id)
-          .eq('active', true);
-        
-        if (servicesError) {
-          throw servicesError;
-        }
-        
-        setServices(servicesData || []);
-        if (servicesData && servicesData.length > 0) {
-          setSelectedService(servicesData[0]);
-        }
-        
-        // Buscar bloqueios de datas
-        const { data: blockedData, error: blockedError } = await supabase
-          .from('blocked_times')
-          .select('*')
-          .eq('user_id', matchedProfile.id);
-          
-        if (blockedError) {
-          throw blockedError;
-        }
-        
-        setBlockedTimes(blockedData || []);
-        
-        // Criar lista de datas bloqueadas para o calendário
-        const blockedDatesArray: Date[] = [];
-        blockedData?.forEach(block => {
-          if (block.date && block.all_day) {
-            blockedDatesArray.push(new Date(block.date));
-          }
-        });
-        setBlockedDates(blockedDatesArray);
-        
-        // Buscar agendamentos existentes
-        const { data: appointmentsData, error: appointmentsError } = await supabase
-          .from('appointments')
-          .select('id, start_time, end_time, service_id')
-          .eq('provider_id', matchedProfile.id);
-          
-        if (appointmentsError) {
-          throw appointmentsError;
-        }
-        
-        setExistingAppointments(appointmentsData || []);
-      } else {
-        // Usuário não encontrado
-        console.error('Profissional não encontrado');
+      if (appointmentsError) {
+        throw appointmentsError;
       }
+      
+      setExistingAppointments(appointmentsData || []);
     } catch (error) {
       console.error('Erro ao carregar informações:', error);
+      toast.error('Erro ao carregar informações');
+      navigate('/');
     } finally {
       setIsLoading(false);
     }
@@ -203,40 +250,41 @@ const PublicBookingPage: React.FC = () => {
   const isTimeBlocked = (dateStr: string, timeStr: string) => {
     // Verificar se existe agendamento neste horário
     const timeToCheck = `${dateStr}T${timeStr}:00`;
+    const checkTime = new Date(timeToCheck).getTime();
     
+    // Verificar agendamentos existentes
     const hasAppointment = existingAppointments.some(app => {
       const appStart = new Date(app.start_time).getTime();
       const appEnd = new Date(app.end_time).getTime();
-      const checkTime = new Date(timeToCheck).getTime();
-      
       return checkTime >= appStart && checkTime < appEnd;
     });
     
     if (hasAppointment) return true;
     
-    // Verificar se cai em um bloqueio de horário específico
-    const dayOfWeek = format(new Date(dateStr), 'EEEE', { locale: ptBR });
-    const foundBlock = blockedTimes.some(block => {
+    // Verificar bloqueios
+    const dayOfWeek = format(new Date(dateStr), 'EEEE', { locale: ptBR }).toLowerCase();
+    
+    return blockedTimes.some(block => {
       // Se é bloqueio recorrente e o dia da semana corresponde
-      if (block.recurring && dayOfWeek.toLowerCase() === block.date) {
-        const blockStart = block.start_time;
-        const blockEnd = block.end_time;
-        return timeStr >= blockStart && timeStr < blockEnd;
+      if (block.recurring && block.date?.toLowerCase() === dayOfWeek) {
+        if (block.all_day) return true;
+        
+        const blockStart = new Date(`${dateStr}T${block.start_time}:00`).getTime();
+        const blockEnd = new Date(`${dateStr}T${block.end_time}:00`).getTime();
+        return checkTime >= blockStart && checkTime < blockEnd;
       }
       
       // Se é bloqueio para data específica
       if (block.date === dateStr) {
         if (block.all_day) return true;
         
-        const blockStart = block.start_time;
-        const blockEnd = block.end_time;
-        return timeStr >= blockStart && timeStr < blockEnd;
+        const blockStart = new Date(`${dateStr}T${block.start_time}:00`).getTime();
+        const blockEnd = new Date(`${dateStr}T${block.end_time}:00`).getTime();
+        return checkTime >= blockStart && checkTime < blockEnd;
       }
       
       return false;
     });
-    
-    return foundBlock;
   };
 
   // Gerar horários disponíveis para o dia selecionado
@@ -248,43 +296,58 @@ const PublicBookingPage: React.FC = () => {
       const fetchAvailability = async () => {
         try {
           const dayOfWeek = format(date, 'EEEE', { locale: ptBR }).toLowerCase();
+          const dayMap: Record<string, string> = {
+            'segunda-feira': 'monday',
+            'terça-feira': 'tuesday',
+            'quarta-feira': 'wednesday',
+            'quinta-feira': 'thursday',
+            'sexta-feira': 'friday',
+            'sábado': 'saturday',
+            'domingo': 'sunday'
+          };
+          
+          const englishDayOfWeek = dayMap[dayOfWeek];
+          console.log('Buscando disponibilidade para:', { dateStr, dayOfWeek, englishDayOfWeek });
           
           if (!providerId) return;
           
+          // @ts-ignore - Erro de tipagem do Supabase
           const { data, error } = await supabase
             .from('availability')
             .select('*')
             .eq('user_id', providerId)
-            .eq('day_of_week', dayOfWeek);
+            .eq('day_of_week', englishDayOfWeek);
             
-          if (error) throw error;
+          if (error) {
+            console.error('Erro ao buscar disponibilidade:', error);
+            throw error;
+          }
+          
+          console.log('Disponibilidade encontrada:', data);
           
           if (data && data.length > 0) {
             const { start_time: startTime, end_time: endTime } = data[0];
+            console.log('Horários de trabalho:', { startTime, endTime });
             
             // Gerar horários a cada 30 minutos entre início e fim
             const times: string[] = [];
-            let timePointer = startTime;
-            const serviceDuration = selectedService.duration;
+            const start = new Date(`${dateStr}T${startTime}`);
+            const end = new Date(`${dateStr}T${endTime}`);
             
-            while (timePointer <= endTime) {
-              // Verificar se este horário não está bloqueado
-              if (!isTimeBlocked(dateStr, timePointer)) {
-                times.push(timePointer);
+            for (let time = start; time < end; time = addMinutes(time, 30)) {
+              const timeStr = formatTimeWithTZ(time, profileTimezone);
+              if (!isTimeBlocked(dateStr, timeStr)) {
+                const serviceEnd = addMinutes(time, selectedService.duration);
+                if (serviceEnd <= end) {
+                  times.push(timeStr);
+                }
               }
-              
-              // Avançar para próximo horário considerando duração do serviço
-              const [hours, minutes] = timePointer.split(':').map(Number);
-              const currentTime = new Date();
-              currentTime.setHours(hours, minutes);
-              
-              // Avançar 30 minutos
-              const newTime = addMinutes(currentTime, 30);
-              timePointer = format(newTime, 'HH:mm');
             }
             
+            console.log('Horários disponíveis:', times);
             setAvailableTimes(times);
           } else {
+            console.log('Nenhuma disponibilidade encontrada para este dia');
             setAvailableTimes([]);
           }
         } catch (error) {
@@ -295,7 +358,7 @@ const PublicBookingPage: React.FC = () => {
       
       fetchAvailability();
     }
-  }, [date, selectedService, providerId, blockedTimes, existingAppointments]);
+  }, [date, selectedService, providerId, blockedTimes, existingAppointments, profileTimezone]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
@@ -390,7 +453,7 @@ const PublicBookingPage: React.FC = () => {
           service_id: selectedService.id,
           client_name: formData.name,
           client_email: formData.email,
-          start_time: startTimeStr,
+          start_time: startTime.toISOString(),
           end_time: endTime.toISOString(),
           notes: formData.notes || null,
           status: 'pending'
@@ -716,7 +779,7 @@ const PublicBookingPage: React.FC = () => {
               <div className="flex items-center mb-4">
                 <Clock className="h-5 w-5 text-primary-500 mr-2" />
                 <span>
-                  {date && format(date, "EEEE, d 'de' MMMM", { locale: ptBR })} às {selectedTime}
+                  {date && formatDateWithTZ(date, profileTimezone)} às {selectedTime}
                 </span>
               </div>
               {selectedService?.price && (

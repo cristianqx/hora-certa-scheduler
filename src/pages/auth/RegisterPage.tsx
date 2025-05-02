@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
@@ -25,6 +24,15 @@ const registerSchema = z.object({
 });
 
 type RegisterFormValues = z.infer<typeof registerSchema>;
+
+const generateSlug = (name: string): string => {
+  return name
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9\s-]/g, '')
+    .replace(/\s+/g, '-');
+};
 
 const RegisterPage = () => {
   const navigate = useNavigate();
@@ -59,13 +67,16 @@ const RegisterPage = () => {
       }
 
       if (data && data.user) {
+        const slug = generateSlug(values.name);
+        
         // Create profile manually to ensure it exists
         const { error: profileError } = await supabase
           .from('profiles')
           .insert([{
             id: data.user.id,
             name: values.name,
-            email: values.email
+            email: values.email,
+            slug: slug
           }]);
           
         if (profileError) {

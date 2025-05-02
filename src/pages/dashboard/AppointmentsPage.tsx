@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { format, parseISO, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, addMonths, subMonths } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -31,6 +30,17 @@ interface Appointment {
   };
 }
 
+// Função utilitária para exibir horário no fuso do usuário
+function formatHorarioBr(isoString: string, timeZone: string = 'America/Sao_Paulo') {
+  const date = new Date(isoString);
+  return date.toLocaleTimeString('pt-BR', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+    timeZone
+  });
+}
+
 const AppointmentsPage = () => {
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [calendarView, setCalendarView] = useState<Date>(new Date());
@@ -41,10 +51,27 @@ const AppointmentsPage = () => {
   const [appointmentDates, setAppointmentDates] = useState<Date[]>([]);
   const [activeTab, setActiveTab] = useState('list');
   const [monthlyAppointments, setMonthlyAppointments] = useState<Record<string, Appointment[]>>({});
+  const [userTimezone, setUserTimezone] = useState<string>('America/Sao_Paulo');
   
   // Fetch appointments
   useEffect(() => {
     fetchAppointments();
+  }, []);
+  
+  // Buscar timezone do perfil ao carregar a página
+  useEffect(() => {
+    const fetchTimezone = async () => {
+      const { data: session } = await supabase.auth.getSession();
+      if (!session?.session?.user) return;
+      const userId = session.session.user.id;
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('timezone')
+        .eq('id', userId)
+        .single();
+      setUserTimezone((profile as any)?.timezone || 'America/Sao_Paulo');
+    };
+    fetchTimezone();
   }, []);
   
   const fetchAppointments = async () => {
@@ -315,8 +342,8 @@ const AppointmentsPage = () => {
                           
                           <div className="flex items-center mt-1 text-xs text-gray-500">
                             <Clock className="h-3 w-3 mr-1" />
-                            {format(parseISO(appointment.start_time), 'HH:mm')} - 
-                            {format(parseISO(appointment.end_time), 'HH:mm')}
+                            {formatHorarioBr(appointment.start_time, userTimezone)} - 
+                            {formatHorarioBr(appointment.end_time, userTimezone)}
                           </div>
                         </div>
                       </div>
@@ -407,7 +434,7 @@ const AppointmentsPage = () => {
                                           handleAppointmentClick(app);
                                         }}
                                       >
-                                        {format(parseISO(app.start_time), 'HH:mm')} - {app.client_name.split(' ')[0]}
+                                        {formatHorarioBr(app.start_time, userTimezone)} - {app.client_name.split(' ')[0]}
                                       </div>
                                     ))
                                   ) : null}
@@ -468,8 +495,8 @@ const AppointmentsPage = () => {
                     <div className="flex items-center gap-2">
                       <CalendarClock className="h-4 w-4 text-gray-500" />
                       <span className="font-medium">Horário:</span> 
-                      {format(parseISO(selectedAppointment.start_time), 'HH:mm')} - 
-                      {format(parseISO(selectedAppointment.end_time), 'HH:mm')}
+                      {formatHorarioBr(selectedAppointment.start_time, userTimezone)} - 
+                      {formatHorarioBr(selectedAppointment.end_time, userTimezone)}
                     </div>
                     
                     <div className="flex items-center gap-2">

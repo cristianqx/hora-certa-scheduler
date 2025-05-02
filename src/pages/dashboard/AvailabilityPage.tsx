@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -172,64 +171,105 @@ const AvailabilityPage: React.FC = () => {
     }
     
     try {
-      // Salvar disponibilidade semanal
-      const promises = [];
-
-      // Para cada dia selecionado, criar/atualizar registro
-      for (const day of days) {
-        if (selectedDays[day.id as keyof DaysOfWeek]) {
-          const availData = availability[day.id] || {
+      setIsLoading(true);
+      
+      // Preparar dados para inserção
+      const availabilityData = days
+        .filter(day => selectedDays[day.id as keyof DaysOfWeek])
+        .map(day => {
+          const dayAvailability = availability[day.id] || {
             day_of_week: day.id,
             start_time: "09:00",
             end_time: "17:00"
           };
           
-          // Se já existe um registro para este dia
-          if (availData.id) {
-            promises.push(
-              supabase
-                .from('availability')
-                .update({
-                  start_time: availData.start_time,
-                  end_time: availData.end_time
-                })
-                .eq('id', availData.id)
-            );
-          } else {
-            // Se é um novo registro
-            promises.push(
-              supabase
-                .from('availability')
-                .insert({
-                  day_of_week: day.id,
-                  start_time: availData.start_time,
-                  end_time: availData.end_time,
-                  user_id: user.id
-                })
-            );
-          }
-        } else if (availability[day.id]?.id) {
-          // Se o dia foi desmarcado, excluir registro
-          promises.push(
-            supabase
-              .from('availability')
-              .delete()
-              .eq('id', availability[day.id].id)
-          );
-        }
+          return {
+            ...dayAvailability,
+            user_id: user.id
+          };
+        });
+      
+      console.log('Dados de disponibilidade a serem salvos:', availabilityData);
+      
+      // Primeiro, remover todos os registros existentes
+      const { error: deleteError } = await supabase
+        .from('availability')
+        .delete()
+        .eq('user_id', user.id);
+        
+      if (deleteError) {
+        console.error('Erro ao deletar disponibilidade existente:', deleteError);
+        throw deleteError;
       }
-
-      await Promise.all(promises);
+      
+      console.log('Disponibilidade antiga removida com sucesso');
+      
+      // Depois, inserir os novos registros
+      if (availabilityData.length > 0) {
+        const { error: insertError } = await supabase
+          .from('availability')
+          .insert(availabilityData);
+          
+        if (insertError) {
+          console.error('Erro ao inserir nova disponibilidade:', insertError);
+          throw insertError;
+        }
+        
+        console.log('Nova disponibilidade inserida com sucesso');
+      }
       
       toast.success('Disponibilidade atualizada com sucesso!');
       
-      // Recarregar dados para sincronização
-      if (user) {
-        loadAvailability(user.id);
-      }
+      // Recarregar os dados para garantir sincronização
+      await loadAvailability(user.id);
+      
     } catch (error) {
       console.error('Erro ao salvar disponibilidade:', error);
-      toast.error('Não foi possível salvar as configurações');
+      toast.error('Não foi possível salvar as configurações de disponibilidade');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleTimeChange = async (dayId: string, field: 'start_time' | 'end_time', value: string) => {
+    if (!user) return;
+    
+    try {
+      const currentAvail = availability[dayId] || {
+        day_of_week: dayId,
+        start_time: "09:00",
+        end_time: "17:00"
+      };
+      
+      const updatedAvail = {
+        ...currentAvail,
+        [field]: value,
+        user_id: user.id
+      };
+      
+      // Atualizar estado local imediatamente para feedback visual
+      setAvailability(prev => ({
+        ...prev,
+        [dayId]: updatedAvail
+      }));
+      
+      // Salvar no Supabase
+      const { error } = await supabase
+        .from('availability')
+        .upsert(updatedAvail, {
+          onConflict: 'user_id,day_of_week'
+        });
+        
+      if (error) throw error;
+      
+      toast.success('Horário atualizado com sucesso');
+      
+    } catch (error) {
+      console.error('Erro ao atualizar horário:', error);
+      toast.error('Não foi possível atualizar o horário');
+      
+      // Recarregar dados em caso de erro
+      await loadAvailability(user.id);
     }
   };
   
@@ -406,7 +446,7 @@ const AvailabilityPage: React.FC = () => {
                                 <Label>Início</Label>
                                 <Select 
                                   value={availDay.start_time}
-                                  onValueChange={value => updateDayAvailability(day, 'start_time', value)}
+                                  onValueChange={(value) => handleTimeChange(day, 'start_time', value)}
                                 >
                                   <SelectTrigger>
                                     <SelectValue />
@@ -424,7 +464,7 @@ const AvailabilityPage: React.FC = () => {
                                 <Label>Término</Label>
                                 <Select 
                                   value={availDay.end_time}
-                                  onValueChange={value => updateDayAvailability(day, 'end_time', value)}
+                                  onValueChange={(value) => handleTimeChange(day, 'end_time', value)}
                                 >
                                   <SelectTrigger>
                                     <SelectValue />

@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -9,6 +8,11 @@ import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 import { format, addDays } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import FullCalendar from '@fullcalendar/react';
+import dayGridPlugin from '@fullcalendar/daygrid';
+import timeGridPlugin from '@fullcalendar/timegrid';
+import interactionPlugin from '@fullcalendar/interaction';
+import ptBrLocale from '@fullcalendar/core/locales/pt-br';
 
 interface Appointment {
   id: string;
@@ -26,6 +30,17 @@ interface AppointmentData {
   status: string;
 }
 
+// Função utilitária para exibir horário no fuso do usuário
+function formatHorarioBr(isoString: string, timeZone: string = 'America/Sao_Paulo') {
+  const date = new Date(isoString);
+  return date.toLocaleTimeString('pt-BR', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+    timeZone
+  });
+}
+
 const DashboardPage: React.FC = () => {
   const [username, setUsername] = useState<string>('');
   const [copying, setCopying] = useState(false);
@@ -38,104 +53,146 @@ const DashboardPage: React.FC = () => {
     confirmationRate: '0%'
   });
   const [isLoading, setIsLoading] = useState(true);
+  const [calendarEvents, setCalendarEvents] = useState<any[]>([]);
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  const [isDragging, setIsDragging] = useState(false);
+  const [session, setSession] = useState<any>(null);
+  const [userTimezone, setUserTimezone] = useState<string>('America/Sao_Paulo');
   
-  useEffect(() => {
-    const fetchData = async () => {
-      setIsLoading(true);
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session?.user) {
-          // Buscar perfil do usuário
-          const { data: profile } = await supabase
-            .from('profiles')
-            .select('name')
-            .eq('id', session.user.id)
-            .single();
-            
-          if (profile) {
-            // Simplificando o nome para criar um slug básico para o usuário
-            const slug = profile.name
+  const fetchData = async () => {
+    setIsLoading(true);
+    try {
+      const { data: { session: currentSession } } = await supabase.auth.getSession();
+      if (currentSession?.user) {
+        setSession(currentSession);
+        // Buscar perfil do usuário
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('name, timezone')
+          .eq('id', currentSession.user.id)
+          .single();
+        
+        // @ts-expect-error
+        if (profile != null && typeof profile === 'object' && 'name' in profile) {
+          const safeProfile = profile as { name: string; timezone?: string };
+          setUsername(
+            safeProfile.name
               .toLowerCase()
               .normalize('NFD')
-              .replace(/[\u0300-\u036f]/g, '')
+              .replace(/\[\u0300-\u036f]/g, '')
               .replace(/[^\w\s]/gi, '')
-              .replace(/\s+/g, '-');
-              
-            setUsername(slug);
-          }
-
-          // Contar serviços ativos
-          const { count: servicesCount } = await supabase
-            .from('services')
-            .select('*', { count: 'exact', head: true })
-            .eq('user_id', session.user.id)
-            .eq('active', true);
-          
-          setServiceCount(servicesCount || 0);
-
-          // Buscar agendamentos
-          const today = new Date();
-          const todayStr = format(today, 'yyyy-MM-dd');
-          const nextWeekStr = format(addDays(today, 7), 'yyyy-MM-dd');
-
-          // Agendamentos de hoje
-          const { data: todayAppointments } = await supabase
-            .from('appointments')
-            .select('*')
-            .eq('provider_id', session.user.id)
-            .gte('start_time', `${todayStr}T00:00:00`)
-            .lte('start_time', `${todayStr}T23:59:59`);
-
-          // Agendamentos da semana
-          const { data: weekAppointments } = await supabase
-            .from('appointments')
-            .select('*')
-            .eq('provider_id', session.user.id)
-            .gte('start_time', `${todayStr}T00:00:00`)
-            .lte('start_time', `${nextWeekStr}T23:59:59`);
-
-          // Contagem de clientes únicos
-          const { data: allAppointmentsData } = await supabase
-            .from('appointments')
-            .select('client_email, status')
-            .eq('provider_id', session.user.id);
-          
-          // Ensure allAppointmentsData is properly typed
-          const allAppointments = allAppointmentsData as AppointmentData[] || [];
-
-          // Próximos agendamentos
-          const { data: upcoming } = await supabase
-            .from('appointments')
-            .select('*, service:service_id (name)')
-            .eq('provider_id', session.user.id)
-            .gte('start_time', `${todayStr}T00:00:00`)
-            .order('start_time', { ascending: true })
-            .limit(3);
-
-          setUpcomingAppointments(upcoming || []);
-          
-          // Cálculo de estatísticas
-          const uniqueClients = new Set(allAppointments.map(app => app.client_email)).size;
-          const confirmedCount = allAppointments.filter(app => app.status === 'confirmed').length;
-          const confirmationRate = allAppointments && allAppointments.length > 0
-            ? Math.round((confirmedCount / allAppointments.length) * 100)
-            : 0;
-
-          setStats({
-            appointmentsToday: todayAppointments?.length || 0,
-            appointmentsWeek: weekAppointments?.length || 0,
-            totalClients: uniqueClients,
-            confirmationRate: `${confirmationRate}%`
-          });
+              .replace(/\s+/g, '-')
+          );
+          setUserTimezone(safeProfile.timezone || 'America/Sao_Paulo');
         }
-      } catch (error) {
-        console.error('Error fetching dashboard data:', error);
-      } finally {
-        setIsLoading(false);
+
+        // Contar serviços ativos
+        const { count: servicesCount } = await supabase
+          .from('services')
+          .select('*', { count: 'exact', head: true })
+          .eq('user_id', currentSession.user.id)
+          .eq('active', true);
+        
+        setServiceCount(servicesCount || 0);
+
+        // Buscar agendamentos
+        const today = new Date();
+        const todayStr = format(today, 'yyyy-MM-dd');
+        const nextWeekStr = format(addDays(today, 7), 'yyyy-MM-dd');
+
+        // Agendamentos de hoje
+        const { data: todayAppointments } = await supabase
+          .from('appointments')
+          .select('*')
+          .eq('provider_id', currentSession.user.id)
+          .gte('start_time', `${todayStr}T00:00:00`)
+          .lte('start_time', `${todayStr}T23:59:59`);
+
+        // Agendamentos da semana
+        const { data: weekAppointments } = await supabase
+          .from('appointments')
+          .select('*')
+          .eq('provider_id', currentSession.user.id)
+          .gte('start_time', `${todayStr}T00:00:00`)
+          .lte('start_time', `${nextWeekStr}T23:59:59`);
+
+        // Contagem de clientes únicos
+        const { data: allAppointmentsData } = await supabase
+          .from('appointments')
+          .select('client_email, status')
+          .eq('provider_id', currentSession.user.id);
+        
+        // Ensure allAppointmentsData is properly typed
+        const allAppointments = allAppointmentsData as AppointmentData[] || [];
+
+        // Próximos agendamentos
+        const { data: upcoming } = await supabase
+          .from('appointments')
+          .select('*, service:service_id (name)')
+          .eq('provider_id', currentSession.user.id)
+          .gte('start_time', `${todayStr}T00:00:00`)
+          .order('start_time', { ascending: true })
+          .limit(3);
+
+        setUpcomingAppointments(upcoming || []);
+        
+        // Cálculo de estatísticas
+        const uniqueClients = new Set(allAppointments.map(app => app.client_email)).size;
+        const confirmedCount = allAppointments.filter(app => app.status === 'confirmed').length;
+        const confirmationRate = allAppointments && allAppointments.length > 0
+          ? Math.round((confirmedCount / allAppointments.length) * 100)
+          : 0;
+
+        setStats({
+          appointmentsToday: todayAppointments?.length || 0,
+          appointmentsWeek: weekAppointments?.length || 0,
+          totalClients: uniqueClients,
+          confirmationRate: `${confirmationRate}%`
+        });
+
+        // Buscar agendamentos para o calendário
+        const { data: appointments } = await supabase
+          .from('appointments')
+          .select('*, service:service_id (name)')
+          .eq('provider_id', currentSession.user.id)
+          .order('start_time', { ascending: true });
+
+        if (appointments) {
+          const events = appointments.map(app => ({
+            id: app.id,
+            title: `${app.client_name} - ${app.service?.name}`,
+            start: formatHorarioBr(app.start_time, userTimezone),
+            end: formatHorarioBr(app.end_time, userTimezone),
+            backgroundColor: app.status === 'confirmed' ? '#22c55e' : '#f59e0b',
+            borderColor: app.status === 'confirmed' ? '#16a34a' : '#d97706',
+            textColor: '#ffffff',
+            extendedProps: {
+              status: app.status,
+              clientEmail: app.client_email,
+              notes: app.notes
+            }
+          }));
+          setCalendarEvents(events);
+        }
       }
-    };
-    
+    } catch (error) {
+      console.error('Error fetching dashboard data:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
     fetchData();
+  }, []);
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
   }, []);
 
   const handleCopyLink = async () => {
@@ -153,6 +210,50 @@ const DashboardPage: React.FC = () => {
     } finally {
       setCopying(false);
       setTimeout(() => setCopying(false), 2000);
+    }
+  };
+
+  const handleEventDrop = async (info: any) => {
+    const { event, oldEvent } = info;
+    const newStart = event.start;
+    const newEnd = event.end;
+    const appointmentId = event.id;
+
+    try {
+      // Verificar disponibilidade no novo horário
+      const { data: conflicts } = await supabase
+        .from('appointments')
+        .select('*')
+        .eq('provider_id', session?.user?.id)
+        .neq('id', appointmentId)
+        .or(`start_time.lte.${newEnd.toISOString()},end_time.gte.${newStart.toISOString()}`);
+
+      if (conflicts && conflicts.length > 0) {
+        // Reverter o evento para a posição original
+        info.revert();
+        toast.error('Horário não disponível. Já existe outro agendamento neste período.');
+        return;
+      }
+
+      // Atualizar o agendamento no banco de dados
+      const { error } = await supabase
+        .from('appointments')
+        .update({
+          start_time: newStart.toISOString(),
+          end_time: newEnd.toISOString()
+        })
+        .eq('id', appointmentId);
+
+      if (error) throw error;
+
+      toast.success('Agendamento atualizado com sucesso!');
+      
+      // Recarregar os eventos do calendário
+      fetchData();
+    } catch (error) {
+      console.error('Erro ao atualizar agendamento:', error);
+      info.revert();
+      toast.error('Não foi possível atualizar o agendamento');
     }
   };
 
@@ -326,6 +427,91 @@ const DashboardPage: React.FC = () => {
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Agenda</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="h-[600px] md:h-[700px]">
+            <FullCalendar
+              plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
+              initialView={isMobile ? "timeGridDay" : "dayGridMonth"}
+              headerToolbar={{
+                left: isMobile ? 'prev,next' : 'prev,next today',
+                center: 'title',
+                right: isMobile ? 'timeGridDay,timeGridWeek' : 'dayGridMonth,timeGridWeek,timeGridDay'
+              }}
+              locale={ptBrLocale}
+              events={calendarEvents}
+              editable={true}
+              droppable={true}
+              eventDrop={handleEventDrop}
+              eventDragStart={() => setIsDragging(true)}
+              eventDragStop={() => setIsDragging(false)}
+              eventClick={(info) => {
+                if (isDragging) return;
+                const event = info.event;
+                toast.info(
+                  <div className="space-y-2">
+                    <p className="font-medium">{event.title}</p>
+                    <p className="text-sm">Status: {event.extendedProps.status === 'confirmed' ? 'Confirmado' : 'Pendente'}</p>
+                    <p className="text-sm">Email: {event.extendedProps.clientEmail}</p>
+                    {event.extendedProps.notes && (
+                      <p className="text-sm">Observações: {event.extendedProps.notes}</p>
+                    )}
+                  </div>
+                );
+              }}
+              height="100%"
+              selectable={true}
+              selectMirror={true}
+              dayMaxEvents={!isMobile}
+              weekends={true}
+              nowIndicator={true}
+              eventTimeFormat={{
+                hour: '2-digit',
+                minute: '2-digit',
+                meridiem: false,
+                hour12: false
+              }}
+              views={{
+                timeGridDay: {
+                  titleFormat: { year: 'numeric', month: 'long', day: 'numeric' },
+                  slotMinTime: '08:00:00',
+                  slotMaxTime: '20:00:00',
+                },
+                timeGridWeek: {
+                  titleFormat: { year: 'numeric', month: 'long', day: 'numeric' },
+                  slotMinTime: '08:00:00',
+                  slotMaxTime: '20:00:00',
+                },
+                dayGridMonth: {
+                  titleFormat: { year: 'numeric', month: 'long' },
+                  dayMaxEvents: true,
+                }
+              }}
+              eventDisplay={isMobile ? 'list-item' : 'auto'}
+              eventMinHeight={isMobile ? 30 : 20}
+              slotMinWidth={isMobile ? 50 : 100}
+              allDaySlot={!isMobile}
+              slotDuration="00:30:00"
+              slotLabelInterval="01:00"
+              slotLabelFormat={{
+                hour: '2-digit',
+                minute: '2-digit',
+                meridiem: false,
+                hour12: false
+              }}
+              eventConstraint={{
+                startTime: '08:00',
+                endTime: '20:00',
+                dows: [1, 2, 3, 4, 5, 6] // Segunda a Sábado
+              }}
+            />
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 };
