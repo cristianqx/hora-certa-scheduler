@@ -93,10 +93,75 @@
   }
 
   body {
-    @apply bg-background text-foreground font-sans;
+    @apply bg-background text-foreground font-sans transition-colors duration-300;
   }
 
   h1, h2, h3, h4, h5, h6 {
     @apply font-heading;
   }
+}
+
+/* Melhorias de estilo para componentes */
+.dropdown-content-improved {
+  @apply border-2 rounded-lg shadow-lg bg-white dark:bg-gray-900 dark:border-gray-700;
+}
+
+.input-improved {
+  @apply focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-primary;
+}
+
+.card-improved {
+  @apply border dark:border-gray-700 shadow-sm hover:shadow-md transition-shadow;
+}
+
+.button-improved {
+  @apply font-medium transition-all;
+}
+
+.badge-improved {
+  @apply font-medium text-xs px-2;
+}
+
+/* Animações */
+.fade-in {
+  animation: fadeIn 0.3s ease-in-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.scale-in {
+  animation: scaleIn 0.2s ease-in-out;
+}
+
+@keyframes scaleIn {
+  from { transform: scale(0.95); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+/* Metronic-inspired styles */
+.metronic-card {
+  @apply rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm hover:shadow-md transition-shadow overflow-hidden;
+}
+
+.metronic-header {
+  @apply bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700;
+}
+
+.metronic-button {
+  @apply font-medium shadow-sm hover:shadow transition-all;
+}
+
+.metronic-table {
+  @apply rounded-lg overflow-hidden border-separate border-spacing-0;
+}
+
+.metronic-table th {
+  @apply bg-gray-50 dark:bg-gray-800 text-gray-500 dark:text-gray-400 font-medium text-xs uppercase tracking-wider;
+}
+
+.metronic-input {
+  @apply bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700 focus:ring-2 focus:ring-primary focus:border-transparent;
 }

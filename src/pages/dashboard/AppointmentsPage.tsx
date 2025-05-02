@@ -13,6 +13,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { supabase } from '@/integrations/supabase/client';
 import { CalendarClock, User, Mail, Clock, Calendar as CalendarIcon, DollarSign, ClipboardList, ArrowLeft, ArrowRight } from 'lucide-react';
 import { toast } from 'sonner';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 
 interface Appointment {
   id: string;
@@ -172,6 +173,36 @@ const AppointmentsPage = () => {
   const endDate = endOfMonth(calendarView);
   const daysInMonth = eachDayOfInterval({ start: startDate, end: endDate });
   
+  // Função segura para calcular semanas do mês
+  const getWeeksOfMonth = (days: Date[]) => {
+    if (!days.length) return [];
+    
+    const weeksNeeded = Math.ceil(days.length / 7);
+    if (isNaN(weeksNeeded) || weeksNeeded <= 0 || weeksNeeded > 6) {
+      console.error('Cálculo inválido de semanas:', { days: days.length, weeksNeeded });
+      return []; // Retornar array vazio em vez de tentar criar um com tamanho inválido
+    }
+    
+    return Array.from({ length: weeksNeeded }, (_, weekIdx) => {
+      const weekStart = weekIdx * 7;
+      const daysInWeek = days.slice(weekStart, weekStart + 7);
+      
+      // Adicionar células vazias para os dias antes do primeiro dia do mês
+      const firstDayOfWeek = daysInWeek[0]?.getDay() || 0;
+      const emptyCellsBefore = Array(firstDayOfWeek).fill(null);
+      
+      // Combinar células vazias com dias do mês
+      const filledCells = [...emptyCellsBefore, ...daysInWeek];
+      
+      // Adicionar células vazias para os dias após o último dia do mês
+      const emptyCellsAfter = Array(7 - filledCells.length).fill(null);
+      
+      return [...filledCells, ...emptyCellsAfter];
+    });
+  };
+  
+  const weeksOfMonth = getWeeksOfMonth(daysInMonth);
+  
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
@@ -300,76 +331,61 @@ const AppointmentsPage = () => {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {Array.from({ length: Math.ceil(daysInMonth.length / 7) }, (_, weekIdx) => {
-                    const weekStart = weekIdx * 7;
-                    const daysInWeek = daysInMonth.slice(weekStart, weekStart + 7);
-                    
-                    // Add empty cells for days before the first day of the month
-                    const firstDayOfWeek = daysInWeek[0]?.getDay() || 0;
-                    const emptyCellsBefore = Array(firstDayOfWeek).fill(null);
-                    
-                    // Add empty cells for days after the last day of the month
-                    const filledCells = [...emptyCellsBefore, ...daysInWeek];
-                    const emptyCellsAfter = Array(7 - filledCells.length).fill(null);
-                    
-                    const weekCells = [...filledCells, ...emptyCellsAfter];
-                    
-                    return (
-                      <TableRow key={`week-${weekIdx}`}>
-                        {weekCells.map((day, dayIdx) => {
-                          if (!day) {
-                            return <TableCell key={`empty-${dayIdx}`} className="h-24"></TableCell>;
-                          }
-                          
-                          const isToday = isSameDay(day, new Date());
-                          const isSelected = isSameDay(day, selectedDate);
-                          const dayAppointments = getDayAppointments(day);
-                          const hasAppointments = dayAppointments.length > 0;
-                          
-                          return (
-                            <TableCell 
-                              key={`day-${format(day, 'yyyy-MM-dd')}`}
-                              className={`h-24 align-top p-1 border ${
-                                isToday ? 'bg-primary-50' : ''
-                              } ${
-                                isSelected ? 'ring-2 ring-primary' : ''
-                              } hover:bg-gray-50 cursor-pointer`}
-                              onClick={() => handleDateChange(day)}
-                            >
-                              <div className="flex flex-col h-full">
-                                <div className={`p-1 text-right ${
-                                  isToday ? 'font-bold' : ''
-                                } text-sm`}>
-                                  {format(day, 'd')}
-                                </div>
-                                
-                                <div className="flex-1 overflow-y-auto max-h-20 space-y-1">
-                                  {hasAppointments ? (
-                                    dayAppointments.map(app => (
-                                      <div 
-                                        key={app.id}
-                                        className={`px-2 py-1 text-xs rounded truncate ${
-                                          app.status === 'canceled' ? 'bg-red-100 text-red-800' :
-                                          app.status === 'confirmed' ? 'bg-green-100 text-green-800' :
-                                          'bg-yellow-100 text-yellow-800'
-                                        }`}
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          handleAppointmentClick(app);
-                                        }}
-                                      >
-                                        {format(parseISO(app.start_time), 'HH:mm')} - {app.client_name.split(' ')[0]}
-                                      </div>
-                                    ))
-                                  ) : null}
-                                </div>
+                  {weeksOfMonth.map((week, weekIdx) => (
+                    <TableRow key={`week-${weekIdx}`}>
+                      {week.map((day, dayIdx) => {
+                        if (!day) {
+                          return <TableCell key={`empty-${weekIdx}-${dayIdx}`} className="h-24"></TableCell>;
+                        }
+                        
+                        const isToday = isSameDay(day, new Date());
+                        const isSelected = isSameDay(day, selectedDate);
+                        const dayAppointments = getDayAppointments(day);
+                        const hasAppointments = dayAppointments.length > 0;
+                        
+                        return (
+                          <TableCell 
+                            key={`day-${format(day, 'yyyy-MM-dd')}`}
+                            className={`h-24 align-top p-1 border ${
+                              isToday ? 'bg-primary-50' : ''
+                            } ${
+                              isSelected ? 'ring-2 ring-primary' : ''
+                            } hover:bg-gray-50 cursor-pointer`}
+                            onClick={() => handleDateChange(day)}
+                          >
+                            <div className="flex flex-col h-full">
+                              <div className={`p-1 text-right ${
+                                isToday ? 'font-bold' : ''
+                              } text-sm`}>
+                                {format(day, 'd')}
                               </div>
-                            </TableCell>
-                          );
-                        })}
-                      </TableRow>
-                    );
-                  })}
+                              
+                              <div className="flex-1 overflow-y-auto max-h-20 space-y-1">
+                                {hasAppointments ? (
+                                  dayAppointments.map(app => (
+                                    <div 
+                                      key={app.id}
+                                      className={`px-2 py-1 text-xs rounded truncate ${
+                                        app.status === 'canceled' ? 'bg-red-100 text-red-800' :
+                                        app.status === 'confirmed' ? 'bg-green-100 text-green-800' :
+                                        'bg-yellow-100 text-yellow-800'
+                                      }`}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleAppointmentClick(app);
+                                      }}
+                                    >
+                                      {format(parseISO(app.start_time), 'HH:mm')} - {app.client_name.split(' ')[0]}
+                                    </div>
+                                  ))
+                                ) : null}
+                              </div>
+                            </div>
+                          </TableCell>
+                        );
+                      })}
+                    </TableRow>
+                  ))}
                 </TableBody>
               </Table>
               
@@ -496,4 +512,11 @@ const AppointmentsPage = () => {
   );
 };
 
-export default AppointmentsPage;
+// Exportar o componente envolto em um ErrorBoundary para prevenir falhas completas da página
+const AppointmentsPageWithErrorBoundary = () => (
+  <ErrorBoundary fallback={<div className="p-8">Ocorreu um erro ao carregar os agendamentos. Por favor, atualize a página.</div>}>
+    <AppointmentsPage />
+  </ErrorBoundary>
+);
+
+export default AppointmentsPageWithErrorBoundary;

@@ -18,45 +18,50 @@ import AvailabilityPage from "./pages/dashboard/AvailabilityPage";
 import ProfilePage from "./pages/dashboard/ProfilePage";
 import PlansPage from "./pages/dashboard/PlansPage";
 import AppointmentsPage from "./pages/dashboard/AppointmentsPage";
+import SettingsPage from "./pages/dashboard/SettingsPage";
 import { PrivateRoute } from "./components/auth/PrivateRoute";
 import { SubscriptionProvider } from "./hooks/useSubscription";
+import { ThemeProvider } from "./hooks/use-theme";
 
 const queryClient = new QueryClient();
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
-    <SubscriptionProvider>
-      <TooltipProvider>
-        <Toaster />
-        <Sonner />
-        <BrowserRouter>
-          <Routes>
-            {/* Public routes */}
-            <Route path="/" element={<LandingPage />} />
-            <Route path="/register" element={<RegisterPage />} />
-            <Route path="/login" element={<LoginPage />} />
-            <Route path="/booking/:username" element={<PublicBookingPage />} />
-            
-            {/* Protected Dashboard routes */}
-            <Route element={<PrivateRoute />}>
-              <Route path="/dashboard" element={<DashboardLayout />}>
-                <Route index element={<DashboardPage />} />
-                <Route path="services" element={<ServicesPage />} />
-                <Route path="services/new" element={<NewServicePage />} />
-                <Route path="services/:id" element={<EditServicePage />} />
-                <Route path="availability" element={<AvailabilityPage />} />
-                <Route path="appointments" element={<AppointmentsPage />} />
-                <Route path="profile" element={<ProfilePage />} />
-                <Route path="plans" element={<PlansPage />} />
+    <ThemeProvider>
+      <SubscriptionProvider>
+        <TooltipProvider>
+          <Toaster />
+          <Sonner />
+          <BrowserRouter>
+            <Routes>
+              {/* Public routes */}
+              <Route path="/" element={<LandingPage />} />
+              <Route path="/register" element={<RegisterPage />} />
+              <Route path="/login" element={<LoginPage />} />
+              <Route path="/booking/:username" element={<PublicBookingPage />} />
+              
+              {/* Protected Dashboard routes */}
+              <Route element={<PrivateRoute />}>
+                <Route path="/dashboard" element={<DashboardLayout />}>
+                  <Route index element={<DashboardPage />} />
+                  <Route path="services" element={<ServicesPage />} />
+                  <Route path="services/new" element={<NewServicePage />} />
+                  <Route path="services/:id" element={<EditServicePage />} />
+                  <Route path="availability" element={<AvailabilityPage />} />
+                  <Route path="appointments" element={<AppointmentsPage />} />
+                  <Route path="profile" element={<ProfilePage />} />
+                  <Route path="plans" element={<PlansPage />} />
+                  <Route path="settings" element={<SettingsPage />} />
+                </Route>
               </Route>
-            </Route>
-            
-            {/* Catch-all route for 404 */}
-            <Route path="*" element={<NotFound />} />
-          </Routes>
-        </BrowserRouter>
-      </TooltipProvider>
-    </SubscriptionProvider>
+              
+              {/* Catch-all route for 404 */}
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </BrowserRouter>
+        </TooltipProvider>
+      </SubscriptionProvider>
+    </ThemeProvider>
   </QueryClientProvider>
 );
 
